@@ -9,12 +9,12 @@
 #
 # dill 0.3.9 and pyarrow 19.0.1 are preinstalled in the image and pinned by
 # cudf/dask, so they CANNOT be upgraded. datasets 3.x pins dill<0.3.9 and
-# datasets 4.0+ pins pyarrow>=21.0.0 — both conflict. datasets is therefore
-# NOT listed here; launch_h100.sh installs datasets==4.0.0 separately with
-# --no-deps so it reuses the image's pyarrow/dill.
+# datasets 4.0+ pins pyarrow>=21.0.0 — both conflict. datasets AND trl (which
+# depends on datasets) are therefore NOT listed here; launch_h100.sh installs
+# both separately with --no-deps so they reuse the image's pyarrow/dill
+# instead of triggering the datasets dependency-resolution conflict.
 transformers==4.56.0
 accelerate==1.4.0
-trl==0.18.0
 deepspeed==0.16.8
 peft>=0.14.0
 liger-kernel>=0.5.10

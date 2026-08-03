@@ -7,15 +7,14 @@
 # Do NOT list them here: pip would downgrade torch (e.g. to 2.6.0) and break
 # the CUDA / flash-attn bindings compiled into the image wheels.
 #
-# dill 0.3.9 and pyarrow 19.0.1 are also preinstalled in the image. datasets
-# 3.x pins dill<0.3.9 (incompatible) and datasets 4.0+ pins pyarrow>=21.0.0,
-# so we pin datasets==4.0.0 and explicitly upgrade pyarrow to >=21.0.0
-# (compatible with the image's dill 0.3.9, which datasets 4.x does not bound).
+# dill 0.3.9 and pyarrow 19.0.1 are preinstalled in the image and pinned by
+# cudf/dask, so they CANNOT be upgraded. datasets 3.x pins dill<0.3.9 and
+# datasets 4.0+ pins pyarrow>=21.0.0 — both conflict. datasets is therefore
+# NOT listed here; launch_h100.sh installs datasets==4.0.0 separately with
+# --no-deps so it reuses the image's pyarrow/dill.
 transformers==4.56.0
 accelerate==1.4.0
 trl==0.18.0
-datasets==4.0.0
-pyarrow>=21.0.0
 deepspeed==0.16.8
 peft>=0.14.0
 liger-kernel>=0.5.10

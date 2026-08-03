@@ -39,6 +39,16 @@ pip install --no-cache-dir \
     -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
     -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
 
+# datasets 4.0.0 declares pyarrow>=21.0.0 + dill constraints that conflict
+# with the base image's pinned pyarrow==19.0.1 / dill==0.3.9 (required by
+# cudf/dask). Install datasets with --no-deps so it reuses the image's
+# pyarrow/dill; open-r1 SFT reads local jsonl and does not exercise the
+# pyarrow>=21 API surface. If a runtime pyarrow error surfaces, fall back to
+# forcing a pyarrow upgrade (and accepting the cudf breakage).
+# Ceiling: replace with a base image that ships datasets/pyarrow>=21 natively.
+pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" \
+    --trusted-host "${PIP_TRUSTED_HOST}" "datasets==4.0.0"
+
 # flash-attn provides the flash_attention_3 backend for H100; the base image
 # may already ship it. Install only if importable check fails, since building
 # from source is slow and the base image wheels are preferred.

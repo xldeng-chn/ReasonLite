@@ -1,9 +1,14 @@
 # Training dependencies for ReasonLite on H100 (open-r1 SFT stack).
 # Installed at runtime by launch_h100.sh on top of the infra/nvidia-pytorch
-# base image (which already provides torch / CUDA / flash-attn).
+# base image.
 #
-# Versions pinned to the open-r1 baseline (setup.py _deps) for compatibility;
-# transformers pinned to match ReasonLite eval requirements (4.56.0).
+# torch, flash-attn, and the CUDA stack are PROVIDED BY THE BASE IMAGE
+# (verified: python 3.12.3, torch 2.7.0a0+nv25.04, flash_attn 2.7.3).
+# Do NOT list them here: pip would downgrade torch (e.g. to 2.6.0) and break
+# the CUDA / flash-attn bindings compiled into the image wheels.
+#
+# Remaining pins follow the open-r1 baseline (setup.py _deps); transformers
+# pinned to match ReasonLite eval requirements (4.56.0).
 transformers==4.56.0
 accelerate==1.4.0
 trl==0.18.0

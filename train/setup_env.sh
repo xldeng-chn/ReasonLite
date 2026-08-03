@@ -26,5 +26,9 @@ export TORCHINDUCTOR_CACHE_DIR="${REASONLITE_WORKSPACE_ROOT}/.cache/torchinducto
 export OPENR1_REPO="${OPENR1_REPO:-https://github.com/huggingface/open-r1.git}"
 export OPENR1_ROOT="${OPENR1_ROOT:-/workspace/open-r1}"
 
-# --- ReasonLite repo root inside the container (mounts train/ + recipes/) ---
+# --- ReasonLite repo (mounted into the container via cctl --code-type git) ---
+# Codeup is reachable from the training nodes over the Aliyun intranet; the
+# branch must match what cctl submits with --git-ref.
+export REASONLITE_GIT_REPO="${REASONLITE_GIT_REPO:-git@codeup.aliyun.com:modelbest/xldeng-chn/ReasonLite.git}"
+export REASONLITE_GIT_REF="${REASONLITE_GIT_REF:-worktree-train-on-h100}"
 export REASONLITE_REPO_ROOT="${REASONLITE_REPO_ROOT:-/workspace/reasonlite}"

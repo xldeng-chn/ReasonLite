@@ -24,6 +24,17 @@ def _load_yaml(rel_path):
         return yaml.safe_load(f)
 
 
+def _parse_shell_exports(rel_path):
+    """Parse `export KEY="${KEY:-value}"` lines from a sourced shell file."""
+    env = {}
+    with open(os.path.join(REPO_ROOT, rel_path)) as f:
+        for line in f:
+            m = re.match(r'\s*export\s+([A-Z_]+)="\$\{[A-Z_]+:-([^}]*)\}"', line)
+            if m:
+                env[m.group(1)] = m.group(2)
+    return env
+
+
 class Stage1ConfigTests(unittest.TestCase):
     def test_dataset_path_filled(self):
         cfg = _load_yaml("train/config_stage1.yaml")
@@ -114,12 +125,16 @@ class LaunchScriptTests(unittest.TestCase):
     def test_setup_env_singlesource_coordinates(self):
         # The cctl coordinates live ONLY in setup_env.sh; launch_h100.sh
         # references them via variables, never as literal duplicates.
-        with open(os.path.join(TRAIN_DIR, "setup_env.sh")) as f:
-            setup = f.read()
+        setup_env = _parse_shell_exports("train/setup_env.sh")
         for key in ("CCTL_CLUSTER", "CCTL_RESOURCE_POOL", "CCTL_PROJECT",
                     "CCTL_BILLING", "CCTL_IMAGE", "DATASET_PATH",
-                    "OUTPUT_ROOT", "REASONLITE_WORKSPACE_ROOT"):
-            self.assertIn(key, setup, f"setup_env.sh missing {key}")
+                    "OUTPUT_ROOT", "REASONLITE_WORKSPACE_ROOT",
+                    "REASONLITE_GIT_REPO", "REASONLITE_GIT_REF"):
+            self.assertIn(key, setup_env, f"setup_env.sh missing {key}")
+        # The ReasonLite repo URL must be the Codeup intranet fork (reachable
+        # from training nodes), and the git ref must be this worktree's branch.
+        self.assertIn("codeup.aliyun.com", setup_env["REASONLITE_GIT_REPO"])
+        self.assertEqual(setup_env["REASONLITE_GIT_REF"], "worktree-train-on-h100")
         # launch script must not hardcode the literal cluster name
         with open(os.path.join(TRAIN_DIR, "launch_h100.sh")) as f:
             launch = f.read()

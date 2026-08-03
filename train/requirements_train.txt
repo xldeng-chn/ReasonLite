@@ -1,0 +1,23 @@
+# Training dependencies for ReasonLite on H100 (open-r1 SFT stack).
+# Installed at runtime by launch_h100.sh on top of the infra/nvidia-pytorch
+# base image (which already provides torch / CUDA / flash-attn).
+#
+# Versions pinned to the open-r1 baseline (setup.py _deps) for compatibility;
+# transformers pinned to match ReasonLite eval requirements (4.56.0).
+transformers==4.56.0
+accelerate==1.4.0
+trl==0.18.0
+datasets>=3.2.0
+deepspeed==0.16.8
+peft>=0.14.0
+liger-kernel>=0.5.10
+safetensors>=0.3.3
+sentencepiece>=0.1.99
+einops>=0.8.0
+huggingface-hub[cli,hf_xet]>=0.30.2,<1.0
+hf_transfer>=0.1.4
+math-verify==0.5.2
+latex2sympy2_extended>=1.0.6
+langdetect
+bitsandbytes>=0.43.0
+wandb>=0.19.1

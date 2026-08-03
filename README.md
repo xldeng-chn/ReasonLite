@@ -153,9 +153,11 @@ cctl job create \
 
 > Note: `per_device_train_batch_size=32` with `max_length=32768` is memory-
 > aggressive. The smoke run exists to surface an OOM before committing to a
-> full run; if it OOMs, lower `per_device_train_batch_size` (and raise
-> `gradient_accumulation_steps` to keep the global batch at 256) or enable
-> `packing: true` in the stage config.
+> full run. If it OOMs, the **required** remediation is to lower
+> `per_device_train_batch_size` and raise `gradient_accumulation_steps` by
+> the same factor so the global batch stays exactly 256 — e.g. per_dev=16 /
+> GA=2, or per_dev=8 / GA=4. The pair is the single source of truth for the
+> batch shape and lives in each `train/config_stage{1,2}.yaml`.
 
 ## Model Evaluation
 

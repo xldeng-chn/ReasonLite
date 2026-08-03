@@ -27,19 +27,28 @@ echo "[launch] mode=${MODE} stage=${STAGE}"
 echo "[launch] workspace=${REASONLITE_WORKSPACE_ROOT} dataset=${DATASET_PATH}"
 mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
 
+# Training nodes have no public internet. pip reaches PyPI via the Tsinghua
+# mirror through the whitelist proxy (PyPI-only; github is NOT whitelisted,
+# so open-r1 is cloned from its Codeup mirror instead — see setup_env.sh).
+export http_proxy="${PIP_PROXY}"
+export https_proxy="${PIP_PROXY}"
+
 # --- 1. Install Python deps (venv built at runtime on the base image) ---
 echo "[launch] installing training requirements"
-pip install --no-cache-dir -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
+pip install --no-cache-dir \
+    -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
+    -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
 
 # flash-attn provides the flash_attention_3 backend for H100; the base image
 # may already ship it. Install only if importable check fails, since building
 # from source is slow and the base image wheels are preferred.
 if ! python -c "import flash_attn" 2>/dev/null; then
     echo "[launch] flash_attn missing; installing"
-    pip install --no-build-isolation flash-attn
+    pip install --no-build-isolation -i "${PIP_INDEX_URL}" \
+        --trusted-host "${PIP_TRUSTED_HOST}" flash-attn
 fi
 
-# --- 2. Clone open-r1 (provides src/open_r1/sft.py) ---
+# --- 2. Clone open-r1 (Codeup mirror; no proxy needed, intranet-reachable) ---
 if [ ! -d "${OPENR1_ROOT}/.git" ]; then
     echo "[launch] cloning open-r1 -> ${OPENR1_ROOT}"
     git clone --depth 1 "${OPENR1_REPO}" "${OPENR1_ROOT}"

@@ -61,13 +61,13 @@ if ! python -c "import flash_attn" 2>/dev/null; then
     pip_install --no-build-isolation flash-attn
 fi
 
-# --- 2. Clone open-r1 (Codeup mirror; NO proxy — intranet-reachable) ---
-# Unset the proxy so git does not tunnel the Codeup SSH/HTTPS through the
-# whitelist proxy (which only permits PyPI and rejects codeup.aliyun.com).
-unset http_proxy https_proxy
-if [ ! -d "${OPENR1_ROOT}/.git" ]; then
-    echo "[launch] cloning open-r1 -> ${OPENR1_ROOT}"
-    git clone --depth 1 "${OPENR1_REPO}" "${OPENR1_ROOT}"
+# --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
+# Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on
+# GPFS ahead of time (OPENR1_ROOT). Verify it exists, then editable-install.
+if [ ! -d "${OPENR1_ROOT}/src/open_r1" ]; then
+    echo "[launch] FATAL: open-r1 not found at ${OPENR1_ROOT}/src/open_r1" >&2
+    echo "[launch]        pre-clone open-r1 onto GPFS at OPENR1_ROOT" >&2
+    exit 1
 fi
 pip install --no-deps -e "${OPENR1_ROOT}/src"
 

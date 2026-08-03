@@ -22,11 +22,11 @@ export DATASET_PATH="${DATASET_PATH:-/user/dengxianglong/datasets/ReasonLite-Dat
 export OUTPUT_ROOT="${OUTPUT_ROOT:-/user/dengxianglong/outputs}"
 export TORCHINDUCTOR_CACHE_DIR="${REASONLITE_WORKSPACE_ROOT}/.cache/torchinductor"
 
-# --- open-r1 source (cloned at runtime into the container) ---
-# Codeup mirror of open-r1: training nodes have no public internet, so the
-# GitHub origin is unreachable. Codeup is on the Aliyun intranet.
-export OPENR1_REPO="${OPENR1_REPO:-git@codeup.aliyun.com:modelbest/xldeng-chn/open-r1.git}"
-export OPENR1_ROOT="${OPENR1_ROOT:-/workspace/open-r1}"
+# --- open-r1 source (preinstalled on shared GPFS, no online clone) ---
+# Training nodes cannot reach codeup.aliyun.com port 22 (connection timed
+# out), so open-r1 is cloned offline and placed on GPFS. launch_h100.sh
+# installs it editable from this path.
+export OPENR1_ROOT="${OPENR1_ROOT:-/user/dengxianglong/workspace/open-r1}"
 
 # --- pip mirror + egress proxy (training nodes have no public internet) ---
 # pip reaches PyPI via the Tsinghua mirror, tunneled through the whitelist

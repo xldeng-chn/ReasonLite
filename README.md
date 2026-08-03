@@ -119,6 +119,44 @@ train/stage2.sh
 train/config_stage2.yaml
 ```
 
+### Training on a single 8xH100 node (paratera_train cluster)
+
+The training stack runs on one 8xH100 node with a single global batch of 256
+(`per_device_train_batch_size=32` x `gradient_accumulation_steps=1` x 8 GPUs),
+DeepSpeed ZeRO-1, and FlashAttention-3 (H100-optimized). Dependencies are
+installed at runtime on top of the `infra/nvidia-pytorch` base image; open-r1
+is cloned and wired into the recipe tree automatically — no custom image build
+is required.
+
+All cluster coordinates and shared-storage paths live in `train/setup_env.sh`
+(the single source of truth); edit them there, not in the launch scripts.
+
+```
+# Smoke test (3 steps, no checkpoint) — verifies memory and path wiring:
+bash train/launch_h100.sh smoke stage1
+
+# Full training run:
+bash train/launch_h100.sh full stage2
+```
+
+Submit via `cctl` (see `train/setup_env.sh` for the authoritative cluster /
+pool / billing / image values):
+
+```bash
+cctl job create \
+  --project "$CCTL_PROJECT" --cluster "$CCTL_CLUSTER" \
+  --resource-pool "$CCTL_RESOURCE_POOL" --billing-account-id "$CCTL_BILLING" \
+  --image "$CCTL_IMAGE" --gpu-model "$CCTL_GPU_MODEL" --priority "$CCTL_PRIORITY" \
+  --gpu "$CCTL_GPU_COUNT" --cpu "$CCTL_CPU" --memory "$CCTL_MEMORY" \
+  --entry "bash $REASONLITE_REPO_ROOT/train/launch_h100.sh smoke stage1"
+```
+
+> Note: `per_device_train_batch_size=32` with `max_length=32768` is memory-
+> aggressive. The smoke run exists to surface an OOM before committing to a
+> full run; if it OOMs, lower `per_device_train_batch_size` (and raise
+> `gradient_accumulation_steps` to keep the global batch at 256) or enable
+> `packing: true` in the stage config.
+
 ## Model Evaluation
 
 Example for evaluating **ReasonLite-0.6B on AIME24**. The evaluation scripts are based on [DeepMath](https://github.com/zwhe99/DeepMath).

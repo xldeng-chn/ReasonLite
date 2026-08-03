@@ -13,6 +13,13 @@ set -euo pipefail
 MODE="${1:?usage: launch_h100.sh <smoke|full> <stage1|stage2>}"
 STAGE="${2:?usage: launch_h100.sh <smoke|full> <stage1|stage2>}"
 
+# Resolve the repo root from the actual mount when present: cctl mounts the
+# cloned repo at /local/apps/ReasonLite, but for local runs fall back to the
+# file's own parent so the script works outside the cluster too.
+if [ -d /local/apps/ReasonLite/train ]; then
+    export REASONLITE_REPO_ROOT=/local/apps/ReasonLite
+fi
+
 # shellcheck source=setup_env.sh
 source "$(dirname "$0")/setup_env.sh"
 

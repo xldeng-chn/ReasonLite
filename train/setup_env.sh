@@ -28,7 +28,8 @@ export OPENR1_ROOT="${OPENR1_ROOT:-/workspace/open-r1}"
 
 # --- ReasonLite repo (mounted into the container via cctl --code-type git) ---
 # Codeup is reachable from the training nodes over the Aliyun intranet; the
-# branch must match what cctl submits with --git-ref.
+# branch must match what cctl submits with --git-ref. cctl mounts the cloned
+# repo at /local/apps/ReasonLite (probed on the paratera_train node).
 export REASONLITE_GIT_REPO="${REASONLITE_GIT_REPO:-git@codeup.aliyun.com:modelbest/xldeng-chn/ReasonLite.git}"
 export REASONLITE_GIT_REF="${REASONLITE_GIT_REF:-worktree-train-on-h100}"
-export REASONLITE_REPO_ROOT="${REASONLITE_REPO_ROOT:-/workspace/reasonlite}"
+export REASONLITE_REPO_ROOT="${REASONLITE_REPO_ROOT:-/local/apps/ReasonLite}"

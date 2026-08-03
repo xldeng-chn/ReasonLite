@@ -86,12 +86,16 @@ cp "${REASONLITE_REPO_ROOT}/recipes/accelerate_configs/zero1.yaml" \
 # --- 4. Dispatch ---
 # smoke: 3 optimizer steps, no checkpoint saving — verifies memory + path wiring.
 # full:  run to completion (num_train_epochs from the yaml).
+# NPROC: number of accelerate processes (one per GPU). Default 8 (matches the
+# 8xH100 target); 1-GPU smoke sets NPROC=1 to avoid 8 processes on 1 GPU.
 case "${MODE}" in
     smoke)
         export REASONLITE_EXTRA_ARGS="--max_steps 3 --save_strategy no"
+        export NPROC="${NPROC:-1}"
         ;;
     full)
         export REASONLITE_EXTRA_ARGS=""
+        export NPROC="${NPROC:-8}"
         ;;
     *)
         echo "[launch] unknown mode: ${MODE}" >&2

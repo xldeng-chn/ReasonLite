@@ -100,11 +100,13 @@ class AccelerateConfigTests(unittest.TestCase):
 
 
 class LaunchScriptTests(unittest.TestCase):
-    def test_stage_scripts_single_node_eight_gpu(self):
+    def test_stage_scripts_single_node_config(self):
         for name in ("stage1.sh", "stage2.sh"):
             with open(os.path.join(TRAIN_DIR, name)) as f:
                 content = f.read()
-            self.assertIn("--num_processes 8", content)
+            # num_processes is parameterized via NPROC (default 8), not hardcoded
+            self.assertIn("--num_processes \"${NPROC}\"", content)
+            self.assertIn("NPROC=\"${NPROC:-8}\"", content)
             self.assertIn("--num_machines 1", content)
             self.assertIn("--machine_rank 0", content)
             self.assertIn("--main_process_ip 127.0.0.1", content)
@@ -113,6 +115,14 @@ class LaunchScriptTests(unittest.TestCase):
             self.assertIn("setup_env.sh", content)
             # TrlParser uses --config (not --config_file) to load the YAML
             self.assertIn("--config ", content)
+
+    def test_launch_sets_nproc_per_mode(self):
+        # smoke defaults NPROC=1 (1-GPU flow validation); full defaults NPROC=8.
+        with open(os.path.join(TRAIN_DIR, "launch_h100.sh")) as f:
+            launch = f.read()
+        self.assertIn('NPROC="${NPROC:-1}"', launch)
+        self.assertIn('NPROC="${NPROC:-8}"', launch)
+
 
     def test_setup_env_script_sourced_by_launch(self):
         # setup_env.sh is the SSOT for cluster coordinates; launch_h100.sh

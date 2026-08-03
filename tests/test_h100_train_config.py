@@ -156,6 +156,67 @@ class LaunchScriptTests(unittest.TestCase):
         self.assertIn("full", launch)
         self.assertIn("--max_steps 3", launch)
 
+    def test_launch_calls_openr1_patch(self):
+        # launch_h100.sh must invoke patch_openr1.sh after editable install.
+        with open(os.path.join(TRAIN_DIR, "launch_h100.sh")) as f:
+            launch = f.read()
+        self.assertIn("patch_openr1.sh", launch)
+
+
+class PatchOpenR1Tests(unittest.TestCase):
+    """patch_openr1.sh inserts a ParallelismConfig import after `import trl`,
+    idempotently. Tested against a synthetic configs.py copy."""
+
+    def _make_fake_configs(self, open_r1_dir):
+        cfg = os.path.join(open_r1_dir, "configs.py")
+        with open(cfg, "w") as f:
+            f.write("from __future__ import annotations\n"
+                    "import trl\n"
+                    "\n"
+                    "@dataclass\n"
+                    "class SFTConfig(trl.SFTConfig):\n"
+                    "    pass\n")
+        return cfg
+
+    def test_patch_inserts_import(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            open_r1_src = os.path.join(td, "src", "open_r1")
+            os.makedirs(open_r1_src)
+            cfg = self._make_fake_configs(open_r1_src)
+            env = dict(os.environ, OPENR1_ROOT=td)
+            rc = subprocess.run(
+                ["bash", os.path.join(TRAIN_DIR, "patch_openr1.sh")],
+                env=env, capture_output=True, text=True)
+            self.assertEqual(rc.returncode, 0, rc.stderr)
+            with open(cfg) as f:
+                content = f.read()
+            self.assertIn("from accelerate.parallelism_config import ParallelismConfig",
+                          content)
+            # import sits right after `import trl`
+            self.assertIn("import trl\n"
+                          "from accelerate.parallelism_config import ParallelismConfig",
+                          content)
+
+    def test_patch_is_idempotent(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            open_r1_src = os.path.join(td, "src", "open_r1")
+            os.makedirs(open_r1_src)
+            cfg = self._make_fake_configs(open_r1_src)
+            env = dict(os.environ, OPENR1_ROOT=td)
+            first = subprocess.run(["bash", os.path.join(TRAIN_DIR, "patch_openr1.sh")],
+                                   env=env, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            with open(cfg) as f:
+                once = f.read()
+            second = subprocess.run(["bash", os.path.join(TRAIN_DIR, "patch_openr1.sh")],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            with open(cfg) as f:
+                twice = f.read()
+            self.assertEqual(once, twice)
+
 
 if __name__ == "__main__":
     unittest.main()

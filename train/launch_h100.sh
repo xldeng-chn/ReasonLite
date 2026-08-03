@@ -72,6 +72,10 @@ if [ ! -f "${OPENR1_ROOT}/setup.py" ] && [ ! -f "${OPENR1_ROOT}/pyproject.toml" 
 fi
 pip install --no-deps -e "${OPENR1_ROOT}"
 
+# Patch open-r1 configs.py for transformers 4.56 compat (ParallelismConfig
+# type-resolution). Must run AFTER editable install so the source is in place.
+bash "${REASONLITE_REPO_ROOT}/train/patch_openr1.sh"
+
 # --- 3. Wire ReasonLite accelerate config into the open-r1 tree ---
 # stage{1,2}.sh reference ${OPENR1_ROOT}/recipes/accelerate_configs/zero1.yaml,
 # which open-r1 does not ship. Copy ours in so the path resolves.

@@ -64,12 +64,13 @@ fi
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on
 # GPFS ahead of time (OPENR1_ROOT). Verify it exists, then editable-install.
-if [ ! -d "${OPENR1_ROOT}/src/open_r1" ]; then
-    echo "[launch] FATAL: open-r1 not found at ${OPENR1_ROOT}/src/open_r1" >&2
+# Install from the repo root (setup.py/pyproject.toml live there, not in src/).
+if [ ! -f "${OPENR1_ROOT}/setup.py" ] && [ ! -f "${OPENR1_ROOT}/pyproject.toml" ]; then
+    echo "[launch] FATAL: open-r1 setup.py/pyproject.toml not found at ${OPENR1_ROOT}" >&2
     echo "[launch]        pre-clone open-r1 onto GPFS at OPENR1_ROOT" >&2
     exit 1
 fi
-pip install --no-deps -e "${OPENR1_ROOT}/src"
+pip install --no-deps -e "${OPENR1_ROOT}"
 
 # --- 3. Wire ReasonLite accelerate config into the open-r1 tree ---
 # stage{1,2}.sh reference ${OPENR1_ROOT}/recipes/accelerate_configs/zero1.yaml,

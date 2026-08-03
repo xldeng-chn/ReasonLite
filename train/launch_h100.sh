@@ -30,14 +30,18 @@ mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
 # Training nodes have no public internet. pip reaches PyPI via the Tsinghua
 # mirror through the whitelist proxy (PyPI-only; github is NOT whitelisted,
 # so open-r1 is cloned from its Codeup mirror instead — see setup_env.sh).
-export http_proxy="${PIP_PROXY}"
-export https_proxy="${PIP_PROXY}"
+# The proxy is scoped to the pip installs ONLY: Codeup is on the intranet and
+# must NOT be routed through the proxy (it breaks git clone), so we unset the
+# proxy vars before cloning open-r1 below.
+pip_install() {
+    http_proxy="${PIP_PROXY}" https_proxy="${PIP_PROXY}" \
+        pip install --no-cache-dir \
+        -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" "$@"
+}
 
 # --- 1. Install Python deps (venv built at runtime on the base image) ---
 echo "[launch] installing training requirements"
-pip install --no-cache-dir \
-    -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
-    -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
+pip_install -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
 
 # datasets 4.0.0 declares pyarrow>=21.0.0 + dill constraints that conflict
 # with the base image's pinned pyarrow==19.0.1 / dill==0.3.9 (required by
@@ -47,20 +51,20 @@ pip install --no-cache-dir \
 # are already satisfied by the requirements install above or the base image.
 # open-r1 SFT reads local jsonl and does not exercise the pyarrow>=21 API
 # surface. Ceiling: replace with a base image that ships datasets/pyarrow>=21.
-pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" \
-    --trusted-host "${PIP_TRUSTED_HOST}" \
-    "datasets==4.0.0" "trl==0.18.0"
+pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
 
 # flash-attn provides the flash_attention_3 backend for H100; the base image
 # may already ship it. Install only if importable check fails, since building
 # from source is slow and the base image wheels are preferred.
 if ! python -c "import flash_attn" 2>/dev/null; then
     echo "[launch] flash_attn missing; installing"
-    pip install --no-build-isolation -i "${PIP_INDEX_URL}" \
-        --trusted-host "${PIP_TRUSTED_HOST}" flash-attn
+    pip_install --no-build-isolation flash-attn
 fi
 
-# --- 2. Clone open-r1 (Codeup mirror; no proxy needed, intranet-reachable) ---
+# --- 2. Clone open-r1 (Codeup mirror; NO proxy — intranet-reachable) ---
+# Unset the proxy so git does not tunnel the Codeup SSH/HTTPS through the
+# whitelist proxy (which only permits PyPI and rejects codeup.aliyun.com).
+unset http_proxy https_proxy
 if [ ! -d "${OPENR1_ROOT}/.git" ]; then
     echo "[launch] cloning open-r1 -> ${OPENR1_ROOT}"
     git clone --depth 1 "${OPENR1_REPO}" "${OPENR1_ROOT}"

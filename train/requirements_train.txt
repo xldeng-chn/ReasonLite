@@ -14,7 +14,7 @@
 # both separately with --no-deps so they reuse the image's pyarrow/dill
 # instead of triggering the datasets dependency-resolution conflict.
 transformers==4.56.0
-accelerate==1.4.0
+accelerate>=1.10.1
 deepspeed==0.16.8
 peft>=0.14.0
 liger-kernel>=0.5.10

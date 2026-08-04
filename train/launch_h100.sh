@@ -68,7 +68,10 @@ if [ ! -f "${FA_WHL}" ]; then
     exit 1
 fi
 echo "[launch] installing flash-attn 2.8.3 (FA3) from ${FA_WHL}"
-pip install --no-deps --force-reinstall --ignore-installed "${FA_WHL}"
+# Uninstall the image's 2.7.3 first: pip's resolver treats the installed
+# version as a hard constraint and rejects the 2.8.3 wheel otherwise.
+pip uninstall -y flash-attn
+pip install --no-deps "${FA_WHL}"
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on

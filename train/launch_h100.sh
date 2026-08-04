@@ -61,16 +61,21 @@ pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
 # flash_attention_3 backend imports flash_attn_3, so we override with a
 # matching prebuilt 2.8.3 wheel from GPFS (cu12 / torch2.7 / cxx11abiTRUE /
 # cp312 — verified against the image's torch 2.7.0a0+nv25.04, abi=True).
-# --no-deps avoids touching torch; --force-reinstall overrides 2.7.3.
 FA_WHL="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn-2.8.3.post1+cu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
 if [ ! -f "${FA_WHL}" ]; then
     echo "[launch] FATAL: flash-attn wheel not found at ${FA_WHL}" >&2
     exit 1
 fi
 echo "[launch] installing flash-attn 2.8.3 (FA3) from ${FA_WHL}"
-# Uninstall the image's 2.7.3 first: pip's resolver treats the installed
-# version as a hard constraint and rejects the 2.8.3 wheel otherwise.
-pip uninstall -y flash-attn
+# The image's flash-attn 2.7.3 was NOT installed via pip (pip show does not
+# see it), so `pip uninstall` cannot remove it. pip's resolver nonetheless
+# scans site-packages, finds the 2.7.3 dist-info, and treats it as a hard
+# constraint that conflicts with the 2.8.3 wheel. Delete the leftover files
+# directly so the resolver sees a clean site-packages.
+SITE_PKGS="$(python -c 'import site; print(site.getsitepackages()[0])')"
+rm -rf "${SITE_PKGS}/flash_attn" \
+       "${SITE_PKGS}"/flash_attn-*.dist-info \
+       "${SITE_PKGS}"/flash_attn_2_cuda*.so*
 pip install --no-deps "${FA_WHL}"
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---

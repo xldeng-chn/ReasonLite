@@ -62,6 +62,14 @@ class Stage1ConfigTests(unittest.TestCase):
         cfg = _load_yaml("train/config_stage1.yaml")
         self.assertEqual(cfg["attn_implementation"], "flash_attention_3")
 
+    def test_train_split_is_medium(self):
+        # open-r1 sft.py reads `dataset_train_split` (TRL ScriptArguments,
+        # default "train"), NOT `dataset_split`. The ReasonLite dataset has
+        # splits high/medium/cot; stage1 trains on `medium`.
+        cfg = _load_yaml("train/config_stage1.yaml")
+        self.assertEqual(cfg["dataset_train_split"], "medium")
+        self.assertNotIn("dataset_split", cfg)
+
     def test_output_dir_on_shared_storage(self):
         cfg = _load_yaml("train/config_stage1.yaml")
         self.assertTrue(cfg["output_dir"].startswith(OUTPUT_ROOT))
@@ -84,6 +92,13 @@ class Stage2ConfigTests(unittest.TestCase):
     def test_uses_flash_attention_3(self):
         cfg = _load_yaml("train/config_stage2.yaml")
         self.assertEqual(cfg["attn_implementation"], "flash_attention_3")
+
+    def test_train_split_is_high(self):
+        # open-r1 sft.py reads `dataset_train_split` (TRL ScriptArguments,
+        # default "train"), NOT `dataset_split`. stage2 trains on `high`.
+        cfg = _load_yaml("train/config_stage2.yaml")
+        self.assertEqual(cfg["dataset_train_split"], "high")
+        self.assertNotIn("dataset_split", cfg)
 
     def test_output_dir_distinct_from_stage1(self):
         s1 = _load_yaml("train/config_stage1.yaml")["output_dir"]

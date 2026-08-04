@@ -44,15 +44,28 @@ def normalize_dataset(dataset, num_proc):
     Pure of open-r1/torch so it unit-tests against a fake DatasetDict.
     remove_columns intersects with the columns actually present, so a renamed
     or extra metadata column never breaks the map.
+
+    Each split is mapped with an explicit deterministic `new_fingerprint`
+    (transform version tag + the split's source fingerprint). Without this,
+    datasets falls back to a RANDOM fingerprint for the map output ("couldn't
+    be hashed properly"), which makes SFTTrainer's downstream tokenize cache
+    key differ per rank/run: all 16 ranks then tokenize the full split
+    independently (16x64 procs on 64 CPUs -> throughput collapse) and no run
+    reuses another's cache. A stable fingerprint lets rank0 tokenize once and
+    the other ranks load the GPFS cache; reruns skip tokenize entirely.
+    Version tag `v1` invalidates deliberately if to_messages changes.
     """
-    present = set(next(iter(dataset.values())).column_names)
-    remove = [c for c in _DROP_COLUMNS if c in present]
-    return dataset.map(
-        to_messages,
-        remove_columns=remove,
-        num_proc=num_proc,
-        desc="Normalizing ReasonLite parquet to messages",
-    )
+    out = {}
+    for split, ds in dataset.items():
+        remove = [c for c in _DROP_COLUMNS if c in ds.column_names]
+        out[split] = ds.map(
+            to_messages,
+            remove_columns=remove,
+            num_proc=num_proc,
+            desc="Normalizing ReasonLite parquet to messages",
+            new_fingerprint=f"reasonlite-messages-v1-{ds._fingerprint}",
+        )
+    return out
 
 
 if __name__ == "__main__":

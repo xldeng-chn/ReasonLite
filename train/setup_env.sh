@@ -16,6 +16,12 @@ export CCTL_MEMORY="${CCTL_MEMORY:-512}"
 # Base image: NV PyTorch with CUDA/torch preinstalled; venv built at runtime.
 export CCTL_IMAGE="${CCTL_IMAGE:-infra/nvidia-pytorch:latest}"
 
+# --- CUDA allocator ---
+# expandable_segments relieves fragmentation (reserved-but-unallocated blocks
+# that OOM despite free capacity). Recommended by the torch OOM message itself.
+# Declared here so every accelerate rank inherits it via the sourced env.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
 # --- shared GPFS paths (writable account root) ---
 export REASONLITE_WORKSPACE_ROOT="${REASONLITE_WORKSPACE_ROOT:-/user/dengxianglong}"
 export DATASET_PATH="${DATASET_PATH:-/user/dengxianglong/datasets/ReasonLite-Dataset}"

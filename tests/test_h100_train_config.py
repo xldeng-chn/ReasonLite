@@ -50,13 +50,15 @@ class Stage1ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["dataset_name"], DATASET_PATH)
 
     def test_global_batch_is_256(self):
-        # User decision: per_device_train_batch_size=32, grad_accum=1, 8 GPUs.
+        # 8-GPU per_dev=32 OOMs at max_length=32768 (backward activations blow
+        # past 80G). Fix: 16 GPUs (2 nodes x 8), per_dev=16, grad_accum=1 ->
+        # global batch 16*1*16 = 256 (unchanged). Only per_dev moved.
         cfg = _load_yaml("train/config_stage1.yaml")
         per_dev = cfg["per_device_train_batch_size"]
         ga = cfg["gradient_accumulation_steps"]
-        # single-node 8-GPU: global batch = per_dev * ga * 8
-        self.assertEqual(per_dev, 32)
-        self.assertEqual(per_dev * ga * 8, 256)
+        self.assertEqual(per_dev, 16)
+        self.assertEqual(ga, 1)
+        self.assertEqual(per_dev * ga * 16, 256)
 
     def test_uses_flash_attention_3(self):
         cfg = _load_yaml("train/config_stage1.yaml")
@@ -124,16 +126,25 @@ class AccelerateConfigTests(unittest.TestCase):
 
 
 class LaunchScriptTests(unittest.TestCase):
-    def test_stage_scripts_single_node_config(self):
+    def test_stage_scripts_multinode_config(self):
+        # Multi-node rendezvous is driven by the operator-injected env vars
+        # (WORLD_SIZE=node count, RANK=node index, MASTER_ADDR, MASTER_PORT),
+        # defaulting to single-node so 1-GPU/8-GPU single-node runs still work.
         for name in ("stage1.sh", "stage2.sh"):
             with open(os.path.join(TRAIN_DIR, name)) as f:
                 content = f.read()
-            # num_processes is parameterized via NPROC (default 8), not hardcoded
-            self.assertIn("--num_processes \"${NPROC}\"", content)
+            # per-node GPU count via NPROC (default 8); total procs = nodes*NPROC
             self.assertIn("NPROC=\"${NPROC:-8}\"", content)
-            self.assertIn("--num_machines 1", content)
-            self.assertIn("--machine_rank 0", content)
-            self.assertIn("--main_process_ip 127.0.0.1", content)
+            self.assertIn("--num_machines \"${NNODES}\"", content)
+            self.assertIn("--machine_rank \"${NODE_RANK}\"", content)
+            self.assertIn("--main_process_ip \"${MASTER_IP}\"", content)
+            # rendezvous defaults from operator env; single-node fallback
+            self.assertIn("${WORLD_SIZE:-1}", content)
+            self.assertIn("${RANK:-0}", content)
+            self.assertIn("${MASTER_ADDR:-127.0.0.1}", content)
+            # IB fabric is present (mlx5_0 on both nodes); enable it
+            self.assertIn("NCCL_IB_DISABLE=0", content)
+            self.assertIn("NCCL_IB_HCA=mlx5_0", content)
             self.assertIn("recipes/accelerate_configs/zero1.yaml", content)
             # stage scripts source the SSOT file for coordinates/paths
             self.assertIn("setup_env.sh", content)
@@ -172,6 +183,11 @@ class LaunchScriptTests(unittest.TestCase):
             self.assertIn(key, setup_env, f"setup_env.sh missing {key}")
         # HF endpoint must be the domestic mirror (nodes cannot reach huggingface.co)
         self.assertEqual(setup_env["HF_ENDPOINT"], "https://hf-mirror.com")
+        # expandable_segments relieves CUDA allocator fragmentation (the OOM
+        # log's own suggestion); declared in setup_env so all ranks inherit it.
+        self.assertIn("PYTORCH_CUDA_ALLOC_CONF", setup_env)
+        self.assertEqual(setup_env["PYTORCH_CUDA_ALLOC_CONF"],
+                         "expandable_segments:True")
         # The ReasonLite repo URL must be the Codeup intranet fork (reachable
         # from training nodes), and the git ref must be this worktree's branch.
         self.assertIn("codeup.aliyun.com", setup_env["REASONLITE_GIT_REPO"])
@@ -305,33 +321,60 @@ class SftReasonliteAdapterTests(unittest.TestCase):
         self.assertIn("training_args.dataset_num_proc", src)
 
     def test_normalize_dataset_maps_and_drops_columns(self):
-        # normalize_dataset maps rows to `messages`, drops metadata columns,
-        # and calls the loaded DatasetDict.map exactly once (no recursion).
+        # normalize_dataset maps each split to `messages`, drops metadata
+        # columns, and passes a DETERMINISTIC new_fingerprint so the downstream
+        # tokenize cache key is stable across ranks and runs (no re-tokenize).
         mod = self._load_transform()
 
         class FakeSplit:
             column_names = ["prompt", "answer", "expected_answer",
                             "vote", "problem_source"]
+            _fingerprint = "srcfp123"
 
-        seen = {}
+            def map(self, fn, remove_columns, num_proc, desc, new_fingerprint):
+                FakeSplit.seen = {
+                    "remove": remove_columns, "num_proc": num_proc,
+                    "fn": fn, "new_fingerprint": new_fingerprint,
+                }
+                return "MAPPED"
 
         class FakeDatasetDict(dict):
-            def map(self, fn, remove_columns, num_proc, desc):
-                seen["remove"] = remove_columns
-                seen["num_proc"] = num_proc
-                seen["fn"] = fn
-                return "MAPPED"
+            pass
 
         dd = FakeDatasetDict(medium=FakeSplit())
         out = mod.normalize_dataset(dd, num_proc=4)
-        self.assertEqual(out, "MAPPED")
+        self.assertEqual(out["medium"], "MAPPED")
+        seen = FakeSplit.seen
         self.assertEqual(seen["remove"], mod._DROP_COLUMNS)
         self.assertEqual(seen["num_proc"], 4)
+        # fingerprint is deterministic: derived from source fp + version tag
+        self.assertEqual(seen["new_fingerprint"], "reasonlite-messages-v1-srcfp123")
         # the mapping fn produces messages
         self.assertEqual(
             seen["fn"]({"prompt": "q", "answer": "a"}),
             {"messages": [{"role": "user", "content": "q"},
                           {"role": "assistant", "content": "a"}]})
+
+    def test_normalize_dataset_fingerprint_is_stable(self):
+        # Same source fingerprint -> same new_fingerprint across calls (this is
+        # what makes rank0's tokenize cache reusable by the other 15 ranks).
+        mod = self._load_transform()
+
+        class FakeSplit:
+            column_names = ["prompt", "answer"]
+            _fingerprint = "abc"
+            captured = []
+
+            def map(self, fn, remove_columns, num_proc, desc, new_fingerprint):
+                FakeSplit.captured.append(new_fingerprint)
+                return "M"
+
+        class FakeDatasetDict(dict):
+            pass
+
+        mod.normalize_dataset(FakeDatasetDict(medium=FakeSplit()), num_proc=1)
+        mod.normalize_dataset(FakeDatasetDict(medium=FakeSplit()), num_proc=1)
+        self.assertEqual(len(set(FakeSplit.captured)), 1)
 
     def test_normalize_dataset_drops_only_present_columns(self):
         # remove_columns intersects with columns actually present.
@@ -339,14 +382,16 @@ class SftReasonliteAdapterTests(unittest.TestCase):
 
         class FakeSplit:
             column_names = ["prompt", "answer"]  # no metadata columns
+            _fingerprint = "fp"
 
-        class FakeDatasetDict(dict):
-            def map(self, fn, remove_columns, num_proc, desc):
+            def map(self, fn, remove_columns, num_proc, desc, new_fingerprint):
                 return remove_columns
 
-        dd = FakeDatasetDict(medium=FakeSplit())
-        self.assertEqual(mod.normalize_dataset(dd, num_proc=1),
-                         ["prompt", "answer"])
+        class FakeDatasetDict(dict):
+            pass
+
+        out = mod.normalize_dataset(FakeDatasetDict(medium=FakeSplit()), num_proc=1)
+        self.assertEqual(out["medium"], ["prompt", "answer"])
 
 
 if __name__ == "__main__":

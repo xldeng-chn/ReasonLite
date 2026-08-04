@@ -11,11 +11,18 @@ OUT=/user/dengxianglong/wheels
 echo "[build] source: ${SRC} (ref $(git -C "${SRC}" describe --tags 2>/dev/null || echo unknown))"
 mkdir -p "${OUT}"
 
+# Force a from-source build: without this, flash-attn's setup.py first tries to
+# download a prebuilt wheel from GitHub, which times out on the cluster. Also
+# cap the parallel compile jobs to the node's core count.
+export FLASH_ATTENTION_FORCE_BUILD=TRUE
+export MAX_JOBS=64
+
 # Compile the FA3 Hopper kernel. setup.py install builds + places the .so in
 # site-packages. --no-build-isolation so it uses the image's torch/nvcc.
+# Keep the FULL log (no tail) so a failure shows the complete traceback.
 cd "${SRC}/hopper"
 echo "[build] running setup.py install (this takes several minutes)..."
-python setup.py install --no-build-isolation 2>&1 | tail -20
+python setup.py install --no-build-isolation 2>&1
 
 # Collect the compiled .so to GPFS.
 SITE=$(python -c 'import site; print(site.getsitepackages()[0])')

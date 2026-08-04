@@ -25,6 +25,6 @@ accelerate launch \
     --main_process_ip 127.0.0.1 \
     --main_process_port 8848 \
     --config_file "${OPENR1_ROOT}/recipes/accelerate_configs/zero1.yaml" \
-    src/open_r1/sft.py \
+    "${REASONLITE_REPO_ROOT}/train/sft_reasonlite.py" \
     --config "${REASONLITE_REPO_ROOT}/train/config_stage2.yaml" \
     ${REASONLITE_EXTRA_ARGS:-}

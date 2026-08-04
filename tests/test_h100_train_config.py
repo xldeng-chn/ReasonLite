@@ -139,6 +139,10 @@ class LaunchScriptTests(unittest.TestCase):
             self.assertIn("setup_env.sh", content)
             # TrlParser uses --config (not --config_file) to load the YAML
             self.assertIn("--config ", content)
+            # Entry is the ReasonLite adapter (wraps open-r1 get_dataset to
+            # normalize parquet -> messages), NOT open-r1's raw sft.py.
+            self.assertIn("sft_reasonlite.py", content)
+            self.assertNotIn("src/open_r1/sft.py", content)
 
     def test_launch_sets_nproc_per_mode(self):
         # smoke defaults NPROC=1 (1-GPU flow validation); full defaults NPROC=8.
@@ -255,5 +259,50 @@ class PatchOpenR1Tests(unittest.TestCase):
             self.assertEqual(once, twice)
 
 
+class SftReasonliteAdapterTests(unittest.TestCase):
+    """train/sft_reasonlite.py is the training entry: it wraps open-r1's
+    get_dataset to normalize the ReasonLite parquet ({prompt, answer, ...})
+    into TRL's conversational `messages` format. The transform is a pure
+    top-level function so it imports and tests without open-r1/torch."""
+
+    def _load_transform(self):
+        import importlib.util
+        path = os.path.join(TRAIN_DIR, "sft_reasonlite.py")
+        spec = importlib.util.spec_from_file_location("sft_reasonlite", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_to_messages_maps_prompt_and_answer(self):
+        mod = self._load_transform()
+        row = {"prompt": "2+2?", "answer": "<think>add</think>\n4",
+               "expected_answer": "4", "vote": {}, "problem_source": "x"}
+        out = mod.to_messages(row)
+        self.assertEqual(out, {"messages": [
+            {"role": "user", "content": "2+2?"},
+            {"role": "assistant", "content": "<think>add</think>\n4"},
+        ]})
+
+    def test_to_messages_requires_prompt_and_answer(self):
+        # Fail fast: a row missing prompt/answer must raise, not silently skip.
+        mod = self._load_transform()
+        with self.assertRaises(KeyError):
+            mod.to_messages({"answer": "4"})
+        with self.assertRaises(KeyError):
+            mod.to_messages({"prompt": "2+2?"})
+
+    def test_entry_wraps_openr1_get_dataset(self):
+        # The adapter reuses open-r1's main/get_dataset (no training-loop copy)
+        # and drops the metadata columns via remove_columns.
+        with open(os.path.join(TRAIN_DIR, "sft_reasonlite.py")) as f:
+            src = f.read()
+        self.assertIn("get_dataset", src)
+        self.assertIn("from open_r1.sft import main", src)
+        self.assertIn("remove_columns", src)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+

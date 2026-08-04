@@ -17,11 +17,11 @@ mkdir -p "${OUT}"
 export FLASH_ATTENTION_FORCE_BUILD=TRUE
 export MAX_JOBS=64
 
-# hopper/setup.py downloads nvcc 12.6 + ptxas 12.8 from developer.download.nvidia.com
-# (the image ships CUDA 12.9, which != 12.8, so it fetches the pinned toolchain).
-# Route that download through the whitelist proxy — direct connections time out.
-export http_proxy=http://whitelist-proxy.cybertron.svc.cluster.local:7891
-export https_proxy=http://whitelist-proxy.cybertron.svc.cluster.local:7891
+# Offline build: hopper/setup.py otherwise downloads nvcc 12.6 + ptxas 12.8 from
+# developer.download.nvidia.com (image CUDA 12.9 != pinned 12.8). The whitelist
+# proxy rejects that host, so skip the download and compile with the image's
+# nvcc 12.9 (CUTLASS 3.9.2 in-tree supports it). See setup.py is_offline_build().
+export FLASH_ATTENTION_OFFLINE_BUILD=TRUE
 
 # Compile the FA3 Hopper kernel. setup.py install builds + places the .so in
 # site-packages. --no-build-isolation so it uses the image's torch/nvcc.

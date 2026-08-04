@@ -43,12 +43,15 @@ def to_messages(example):
 def get_dataset(script_args):
     """open-r1's get_dataset, then normalize parquet rows to `messages`.
 
-    open-r1 is imported lazily so this module (and to_messages) imports
-    without open-r1/torch present, e.g. under unit tests.
+    Calls the authoritative loader open_r1.utils.get_dataset (the symbol
+    sft.py itself imports), NOT open_r1.sft.get_dataset — __main__ rebinds the
+    latter to this wrapper, so calling it would self-recurse. open-r1 is
+    imported lazily so this module (and to_messages) imports without
+    open-r1/torch present, e.g. under unit tests.
     """
-    import open_r1.sft as openr1_sft
+    from open_r1.utils import get_dataset as openr1_get_dataset
 
-    dataset = openr1_sft.get_dataset(script_args)
+    dataset = openr1_get_dataset(script_args)
     # remove_columns uses the actual columns present so extra/renamed metadata
     # columns never break the map; the intersection keeps only what exists.
     present = set(next(iter(dataset.values())).column_names)

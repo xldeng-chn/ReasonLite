@@ -299,6 +299,55 @@ class SftReasonliteAdapterTests(unittest.TestCase):
         self.assertIn("get_dataset", src)
         self.assertIn("from open_r1.sft import main", src)
         self.assertIn("remove_columns", src)
+        # Must call the authoritative loader open_r1.utils.get_dataset, NOT the
+        # open_r1.sft attribute (which __main__ overwrites with this wrapper).
+        self.assertIn("open_r1.utils", src)
+
+    def test_get_dataset_calls_util_once_no_recursion(self):
+        # Regression: __main__ sets open_r1.sft.get_dataset = wrapper, so the
+        # wrapper must call open_r1.utils.get_dataset. Calling the sft attribute
+        # would self-recurse (RecursionError). Inject fake open_r1 modules and
+        # assert the underlying loader is invoked exactly once.
+        import sys
+        import types
+
+        mod = self._load_transform()
+
+        class FakeSplit:
+            column_names = ["prompt", "answer", "expected_answer",
+                            "vote", "problem_source"]
+
+        class FakeDatasetDict(dict):
+            def map(self, fn, remove_columns, num_proc, desc):
+                return {"removed": remove_columns, "num_proc": num_proc}
+
+        calls = {"n": 0}
+
+        def fake_loader(_args):
+            calls["n"] += 1
+            return FakeDatasetDict(medium=FakeSplit())
+
+        fake_pkg = types.ModuleType("open_r1")
+        fake_utils = types.ModuleType("open_r1.utils")
+        fake_utils.get_dataset = fake_loader
+        fake_sft = types.ModuleType("open_r1.sft")
+        fake_sft.get_dataset = mod.get_dataset  # simulate __main__ override
+        saved = {k: sys.modules.get(k) for k in
+                 ("open_r1", "open_r1.utils", "open_r1.sft")}
+        sys.modules.update({"open_r1": fake_pkg, "open_r1.utils": fake_utils,
+                            "open_r1.sft": fake_sft})
+        try:
+            class Args:
+                dataset_num_proc = 4
+            out = mod.get_dataset(Args())
+            self.assertEqual(calls["n"], 1)
+            self.assertEqual(out["removed"], mod._DROP_COLUMNS)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    sys.modules.pop(k, None)
+                else:
+                    sys.modules[k] = v
 
 
 if __name__ == "__main__":

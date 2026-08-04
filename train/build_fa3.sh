@@ -17,6 +17,12 @@ mkdir -p "${OUT}"
 export FLASH_ATTENTION_FORCE_BUILD=TRUE
 export MAX_JOBS=64
 
+# hopper/setup.py downloads nvcc 12.6 + ptxas 12.8 from developer.download.nvidia.com
+# (the image ships CUDA 12.9, which != 12.8, so it fetches the pinned toolchain).
+# Route that download through the whitelist proxy — direct connections time out.
+export http_proxy=http://whitelist-proxy.cybertron.svc.cluster.local:7891
+export https_proxy=http://whitelist-proxy.cybertron.svc.cluster.local:7891
+
 # Compile the FA3 Hopper kernel. setup.py install builds + places the .so in
 # site-packages. --no-build-isolation so it uses the image's torch/nvcc.
 # Keep the FULL log (no tail) so a failure shows the complete traceback.

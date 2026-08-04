@@ -56,13 +56,19 @@ pip_install -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
 # surface. Ceiling: replace with a base image that ships datasets/pyarrow>=21.
 pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
 
-# flash-attn provides the flash_attention_3 backend for H100; the base image
-# may already ship it. Install only if importable check fails, since building
-# from source is slow and the base image wheels are preferred.
-if ! python -c "import flash_attn" 2>/dev/null; then
-    echo "[launch] flash_attn missing; installing"
-    pip_install --no-build-isolation flash-attn
+# flash-attn: the base image ships 2.7.3, which lacks the flash_attn_3 module
+# (FA3 for H100, introduced in flash-attn 2.8). transformers 4.56's
+# flash_attention_3 backend imports flash_attn_3, so we override with a
+# matching prebuilt 2.8.3 wheel from GPFS (cu12 / torch2.7 / cxx11abiTRUE /
+# cp312 — verified against the image's torch 2.7.0a0+nv25.04, abi=True).
+# --no-deps avoids touching torch; --force-reinstall overrides 2.7.3.
+FA_WHL="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn-2.8.3.post1+cu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
+if [ ! -f "${FA_WHL}" ]; then
+    echo "[launch] FATAL: flash-attn wheel not found at ${FA_WHL}" >&2
+    exit 1
 fi
+echo "[launch] installing flash-attn 2.8.3 (FA3) from ${FA_WHL}"
+pip install --no-deps --force-reinstall "${FA_WHL}"
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on

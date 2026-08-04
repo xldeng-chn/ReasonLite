@@ -106,4 +106,11 @@ case "${MODE}" in
         ;;
 esac
 
+# HF model/tokenizer downloads (get_tokenizer/get_model inside sft.py) must go
+# through the whitelist proxy — hf-mirror.com is not directly reachable. Exclude
+# intranet hosts (Codeup, k8s services, GPFS) so they bypass the proxy.
+export http_proxy="${PIP_PROXY}"
+export https_proxy="${PIP_PROXY}"
+export no_proxy="codeup.aliyun.com,.cybertron.svc.cluster.local,.svc.cluster.local,127.0.0.1,localhost"
+
 bash "${REASONLITE_REPO_ROOT}/train/${STAGE}.sh" ${REASONLITE_EXTRA_ARGS}

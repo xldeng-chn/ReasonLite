@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: amd/ReasonLite-0.6B-Turbo
+model_name_or_path: /user/dengxianglong/models/ReasonLite-0.6B-Turbo
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_3

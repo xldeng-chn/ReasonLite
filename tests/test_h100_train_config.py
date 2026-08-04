@@ -25,11 +25,20 @@ def _load_yaml(rel_path):
 
 
 def _parse_shell_exports(rel_path):
-    """Parse `export KEY="${KEY:-value}"` lines from a sourced shell file."""
+    """Parse `export KEY="..."` lines from a sourced shell file.
+
+    Handles two forms:
+      export KEY="${KEY:-value}"   -> value
+      export KEY="${OTHER}/path"   -> ${OTHER}/path (raw, kept for presence check)
+    """
     env = {}
     with open(os.path.join(REPO_ROOT, rel_path)) as f:
         for line in f:
             m = re.match(r'\s*export\s+([A-Z_]+)="\$\{[A-Z_]+:-([^}]*)\}"', line)
+            if m:
+                env[m.group(1)] = m.group(2)
+                continue
+            m = re.match(r'\s*export\s+([A-Z_]+)="(.+)"', line)
             if m:
                 env[m.group(1)] = m.group(2)
     return env
@@ -139,8 +148,11 @@ class LaunchScriptTests(unittest.TestCase):
         for key in ("CCTL_CLUSTER", "CCTL_RESOURCE_POOL", "CCTL_PROJECT",
                     "CCTL_BILLING", "CCTL_IMAGE", "DATASET_PATH",
                     "OUTPUT_ROOT", "REASONLITE_WORKSPACE_ROOT",
-                    "REASONLITE_GIT_REPO", "REASONLITE_GIT_REF"):
+                    "REASONLITE_GIT_REPO", "REASONLITE_GIT_REF",
+                    "HF_ENDPOINT", "HF_DATASETS_CACHE", "TMPDIR"):
             self.assertIn(key, setup_env, f"setup_env.sh missing {key}")
+        # HF endpoint must be the domestic mirror (nodes cannot reach huggingface.co)
+        self.assertEqual(setup_env["HF_ENDPOINT"], "https://hf-mirror.com")
         # The ReasonLite repo URL must be the Codeup intranet fork (reachable
         # from training nodes), and the git ref must be this worktree's branch.
         self.assertIn("codeup.aliyun.com", setup_env["REASONLITE_GIT_REPO"])

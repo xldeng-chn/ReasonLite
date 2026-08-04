@@ -32,6 +32,11 @@ export HF_HUB_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
 export TRANSFORMERS_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
 export TMPDIR="${REASONLITE_WORKSPACE_ROOT}/.cache/tmp"
 
+# --- HuggingFace endpoint (nodes have no public internet to huggingface.co) ---
+# hf-mirror.com is the domestic mirror; huggingface_hub/transformers read
+# HF_ENDPOINT and route all from_pretrained / hf_hub_download calls through it.
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+
 # --- open-r1 source (preinstalled on shared GPFS, no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com port 22 (connection timed
 # out), so open-r1 is cloned offline and placed on GPFS. launch_h100.sh

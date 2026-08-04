@@ -68,7 +68,7 @@ if [ ! -f "${FA_WHL}" ]; then
     exit 1
 fi
 echo "[launch] installing flash-attn 2.8.3 (FA3) from ${FA_WHL}"
-pip install --no-deps --force-reinstall "${FA_WHL}"
+pip install --no-deps --force-reinstall --ignore-installed "${FA_WHL}"
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on

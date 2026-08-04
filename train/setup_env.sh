@@ -22,6 +22,16 @@ export DATASET_PATH="${DATASET_PATH:-/user/dengxianglong/datasets/ReasonLite-Dat
 export OUTPUT_ROOT="${OUTPUT_ROOT:-/user/dengxianglong/outputs}"
 export TORCHINDUCTOR_CACHE_DIR="${REASONLITE_WORKSPACE_ROOT}/.cache/torchinductor"
 
+# --- caches redirected to GPFS (container /root overlay has limited space) ---
+# datasets writes generated splits to HF_DATASETS_CACHE; the default /root/.cache
+# fills up and crashes during split generation. All HF/torch/tmp caches go to
+# the shared GPFS account root instead.
+export HF_HOME="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface"
+export HF_DATASETS_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/datasets"
+export HF_HUB_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
+export TRANSFORMERS_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
+export TMPDIR="${REASONLITE_WORKSPACE_ROOT}/.cache/tmp"
+
 # --- open-r1 source (preinstalled on shared GPFS, no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com port 22 (connection timed
 # out), so open-r1 is cloned offline and placed on GPFS. launch_h100.sh

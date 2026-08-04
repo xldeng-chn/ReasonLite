@@ -25,7 +25,10 @@ source "$(dirname "$0")/setup_env.sh"
 
 echo "[launch] mode=${MODE} stage=${STAGE}"
 echo "[launch] workspace=${REASONLITE_WORKSPACE_ROOT} dataset=${DATASET_PATH}"
-mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
+# Pre-create all cache dirs on GPFS (sourced from setup_env.sh). HF_DATASETS_CACHE
+# etc. must exist before datasets tries to write split generation output there.
+mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}" \
+         "${HF_DATASETS_CACHE}" "${HF_HUB_CACHE}" "${TMPDIR}"
 
 # Training nodes have no public internet. pip reaches PyPI via the Tsinghua
 # mirror through the whitelist proxy (PyPI-only; github is NOT whitelisted,

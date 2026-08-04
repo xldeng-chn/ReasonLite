@@ -296,58 +296,57 @@ class SftReasonliteAdapterTests(unittest.TestCase):
         # and drops the metadata columns via remove_columns.
         with open(os.path.join(TRAIN_DIR, "sft_reasonlite.py")) as f:
             src = f.read()
-        self.assertIn("get_dataset", src)
         self.assertIn("from open_r1.sft import main", src)
         self.assertIn("remove_columns", src)
         # Must call the authoritative loader open_r1.utils.get_dataset, NOT the
-        # open_r1.sft attribute (which __main__ overwrites with this wrapper).
-        self.assertIn("open_r1.utils", src)
+        # open_r1.sft attribute (which the entry overwrites with the wrapper).
+        self.assertIn("from open_r1.utils import get_dataset", src)
+        # dataset_num_proc lives on SFTConfig (training_args), not ScriptArguments.
+        self.assertIn("training_args.dataset_num_proc", src)
 
-    def test_get_dataset_calls_util_once_no_recursion(self):
-        # Regression: __main__ sets open_r1.sft.get_dataset = wrapper, so the
-        # wrapper must call open_r1.utils.get_dataset. Calling the sft attribute
-        # would self-recurse (RecursionError). Inject fake open_r1 modules and
-        # assert the underlying loader is invoked exactly once.
-        import sys
-        import types
-
+    def test_normalize_dataset_maps_and_drops_columns(self):
+        # normalize_dataset maps rows to `messages`, drops metadata columns,
+        # and calls the loaded DatasetDict.map exactly once (no recursion).
         mod = self._load_transform()
 
         class FakeSplit:
             column_names = ["prompt", "answer", "expected_answer",
                             "vote", "problem_source"]
 
+        seen = {}
+
         class FakeDatasetDict(dict):
             def map(self, fn, remove_columns, num_proc, desc):
-                return {"removed": remove_columns, "num_proc": num_proc}
+                seen["remove"] = remove_columns
+                seen["num_proc"] = num_proc
+                seen["fn"] = fn
+                return "MAPPED"
 
-        calls = {"n": 0}
+        dd = FakeDatasetDict(medium=FakeSplit())
+        out = mod.normalize_dataset(dd, num_proc=4)
+        self.assertEqual(out, "MAPPED")
+        self.assertEqual(seen["remove"], mod._DROP_COLUMNS)
+        self.assertEqual(seen["num_proc"], 4)
+        # the mapping fn produces messages
+        self.assertEqual(
+            seen["fn"]({"prompt": "q", "answer": "a"}),
+            {"messages": [{"role": "user", "content": "q"},
+                          {"role": "assistant", "content": "a"}]})
 
-        def fake_loader(_args):
-            calls["n"] += 1
-            return FakeDatasetDict(medium=FakeSplit())
+    def test_normalize_dataset_drops_only_present_columns(self):
+        # remove_columns intersects with columns actually present.
+        mod = self._load_transform()
 
-        fake_pkg = types.ModuleType("open_r1")
-        fake_utils = types.ModuleType("open_r1.utils")
-        fake_utils.get_dataset = fake_loader
-        fake_sft = types.ModuleType("open_r1.sft")
-        fake_sft.get_dataset = mod.get_dataset  # simulate __main__ override
-        saved = {k: sys.modules.get(k) for k in
-                 ("open_r1", "open_r1.utils", "open_r1.sft")}
-        sys.modules.update({"open_r1": fake_pkg, "open_r1.utils": fake_utils,
-                            "open_r1.sft": fake_sft})
-        try:
-            class Args:
-                dataset_num_proc = 4
-            out = mod.get_dataset(Args())
-            self.assertEqual(calls["n"], 1)
-            self.assertEqual(out["removed"], mod._DROP_COLUMNS)
-        finally:
-            for k, v in saved.items():
-                if v is None:
-                    sys.modules.pop(k, None)
-                else:
-                    sys.modules[k] = v
+        class FakeSplit:
+            column_names = ["prompt", "answer"]  # no metadata columns
+
+        class FakeDatasetDict(dict):
+            def map(self, fn, remove_columns, num_proc, desc):
+                return remove_columns
+
+        dd = FakeDatasetDict(medium=FakeSplit())
+        self.assertEqual(mod.normalize_dataset(dd, num_proc=1),
+                         ["prompt", "answer"])
 
 
 if __name__ == "__main__":

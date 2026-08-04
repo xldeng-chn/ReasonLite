@@ -13,6 +13,13 @@ set -euo pipefail
 MODE="${1:?usage: launch_h100.sh <smoke|full> <stage1|stage2>}"
 STAGE="${2:?usage: launch_h100.sh <smoke|full> <stage1|stage2>}"
 
+# The base image exports PIP_CONSTRAINT=/etc/pip/constraint.txt, which pins
+# flash_attn==2.7.3 (and torch/pyarrow/dill). pip's resolver honors it as a
+# hard user constraint, blocking our 2.8.3 wheel (and any version override).
+# We manage versions via requirements_train.txt (SSOT), so drop the image's
+# constraint entirely.
+unset PIP_CONSTRAINT
+
 # Resolve the repo root from the actual mount when present: cctl mounts the
 # cloned repo at /local/apps/ReasonLite, but for local runs fall back to the
 # file's own parent so the script works outside the cluster too.

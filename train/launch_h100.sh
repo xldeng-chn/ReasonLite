@@ -63,27 +63,24 @@ pip_install -r "${REASONLITE_REPO_ROOT}/train/requirements_train.txt"
 # surface. Ceiling: replace with a base image that ships datasets/pyarrow>=21.
 pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
 
-# flash-attn: the base image ships 2.7.3, which lacks the flash_attn_3 module
-# (FA3 for H100, introduced in flash-attn 2.8). transformers 4.56's
-# flash_attention_3 backend imports flash_attn_3, so we override with a
-# matching prebuilt 2.8.3 wheel from GPFS (cu12 / torch2.7 / cxx11abiTRUE /
-# cp312 — verified against the image's torch 2.7.0a0+nv25.04, abi=True).
-FA_WHL="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn-2.8.3.post1+cu12torch2.7cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
-if [ ! -f "${FA_WHL}" ]; then
-    echo "[launch] FATAL: flash-attn wheel not found at ${FA_WHL}" >&2
+# flash-attn FA3: transformers 4.56's flash_attention_3 backend imports the
+# flash_attn_3 module, which is NOT in any PyPI wheel — its Hopper kernel must
+# be compiled from source (nvcc 12.6/ptxas 12.8, blocked by the air-gapped
+# proxy). We pre-compiled it once on a devspace and staged the resulting egg on
+# GPFS. Copy the egg into the training pod's site-packages so import works.
+# Ceiling: bake FA3 into a custom base image to skip this copy.
+FA3_EGG="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
+if [ ! -d "${FA3_EGG}" ]; then
+    echo "[launch] FATAL: FA3 egg not found at ${FA3_EGG}" >&2
     exit 1
 fi
-echo "[launch] installing flash-attn 2.8.3 (FA3) from ${FA_WHL}"
-# The image's flash-attn 2.7.3 was NOT installed via pip (pip show does not
-# see it), so `pip uninstall` cannot remove it. pip's resolver nonetheless
-# scans site-packages, finds the 2.7.3 dist-info, and treats it as a hard
-# constraint that conflicts with the 2.8.3 wheel. Delete the leftover files
-# directly so the resolver sees a clean site-packages.
 SITE_PKGS="$(python -c 'import site; print(site.getsitepackages()[0])')"
-rm -rf "${SITE_PKGS}/flash_attn" \
-       "${SITE_PKGS}"/flash_attn-*.dist-info \
-       "${SITE_PKGS}"/flash_attn_2_cuda*.so*
-pip install --no-deps "${FA_WHL}"
+echo "[launch] installing FA3 egg into ${SITE_PKGS}"
+rm -rf "${SITE_PKGS}/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
+cp -r "${FA3_EGG}" "${SITE_PKGS}/"
+# Register the egg on sys.path via easy-install.pth (egg is not zip-safe).
+echo "./flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg" >> "${SITE_PKGS}/easy-install.pth"
+python -c "import flash_attn_3; print('[launch] FA3 import OK:', flash_attn_3.__file__)"
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on

@@ -61,5 +61,5 @@ export PIP_PROXY="${PIP_PROXY:-http://whitelist-proxy.cybertron.svc.cluster.loca
 # branch must match what cctl submits with --git-ref. cctl mounts the cloned
 # repo at /local/apps/ReasonLite (probed on the paratera_train node).
 export REASONLITE_GIT_REPO="${REASONLITE_GIT_REPO:-git@codeup.aliyun.com:modelbest/xldeng-chn/ReasonLite.git}"
-export REASONLITE_GIT_REF="${REASONLITE_GIT_REF:-worktree-train-on-h100}"
+export REASONLITE_GIT_REF="${REASONLITE_GIT_REF:-parity-baseline}"
 export REASONLITE_REPO_ROOT="${REASONLITE_REPO_ROOT:-/local/apps/ReasonLite}"

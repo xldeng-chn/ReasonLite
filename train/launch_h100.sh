@@ -68,19 +68,44 @@ pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
 # be compiled from source (nvcc 12.6/ptxas 12.8, blocked by the air-gapped
 # proxy). We pre-compiled it once on a devspace and staged the resulting egg on
 # GPFS. Copy the egg into the training pod's site-packages so import works.
+# Only needed when the recipe actually asks for flash_attention_3: this branch
+# runs flash_attention_2, which the base image already ships (verified
+# flash_attn 2.7.3), so hard-failing on an FA3 artifact the run never imports
+# would be a false blocker.
 # Ceiling: bake FA3 into a custom base image to skip this copy.
-FA3_EGG="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
-if [ ! -d "${FA3_EGG}" ]; then
-    echo "[launch] FATAL: FA3 egg not found at ${FA3_EGG}" >&2
-    exit 1
+RECIPE_ATTN="$(sed -nE 's/^attn_implementation:[[:space:]]*([A-Za-z0-9_]+).*/\1/p' \
+    "${REASONLITE_REPO_ROOT}/train/config_${STAGE}.yaml" | head -1)"
+echo "[launch] recipe attn_implementation=${RECIPE_ATTN:-<unset>}"
+if [ "${RECIPE_ATTN}" = "flash_attention_3" ]; then
+    FA3_EGG="${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
+    if [ ! -d "${FA3_EGG}" ]; then
+        echo "[launch] FATAL: FA3 egg not found at ${FA3_EGG}" >&2
+        exit 1
+    fi
+    SITE_PKGS="$(python -c 'import site; print(site.getsitepackages()[0])')"
+    echo "[launch] installing FA3 egg into ${SITE_PKGS}"
+    rm -rf "${SITE_PKGS}/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
+    cp -r "${FA3_EGG}" "${SITE_PKGS}/"
+    # Register the egg on sys.path via easy-install.pth (egg is not zip-safe).
+    echo "./flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg" >> "${SITE_PKGS}/easy-install.pth"
+    python -c "import flash_attn_3; print('[launch] FA3 import OK:', flash_attn_3.__file__)"
+else
+    echo "[launch] skipping FA3 egg install (recipe uses ${RECIPE_ATTN:-<unset>})"
 fi
-SITE_PKGS="$(python -c 'import site; print(site.getsitepackages()[0])')"
-echo "[launch] installing FA3 egg into ${SITE_PKGS}"
-rm -rf "${SITE_PKGS}/flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg"
-cp -r "${FA3_EGG}" "${SITE_PKGS}/"
-# Register the egg on sys.path via easy-install.pth (egg is not zip-safe).
-echo "./flash_attn_3-3.0.0b1-py3.12-linux-x86_64.egg" >> "${SITE_PKGS}/easy-install.pth"
-python -c "import flash_attn_3; print('[launch] FA3 import OK:', flash_attn_3.__file__)"
+
+# Fail fast if the recipe asks for FA2 but the image cannot bind it: a silent
+# fallback to sdpa produces a perfectly normal-looking loss curve on a baseline
+# that is no longer the recipe's baseline.
+if [ "${RECIPE_ATTN}" = "flash_attention_2" ]; then
+    python - <<'PYFA2'
+import sys
+from transformers.utils import is_flash_attn_2_available
+ok = is_flash_attn_2_available()
+print("[launch] is_flash_attn_2_available():", ok)
+if not ok:
+    sys.exit("[launch] FATAL: recipe asks for flash_attention_2 but the image cannot bind it")
+PYFA2
+fi
 
 # --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
 # Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on
@@ -109,13 +134,18 @@ cp "${REASONLITE_REPO_ROOT}/recipes/accelerate_configs/zero1.yaml" \
 # full:  run to completion (num_train_epochs from the yaml).
 # NPROC: number of accelerate processes (one per GPU). Default 8 (matches the
 # 8xH100 target); 1-GPU smoke sets NPROC=1 to avoid 8 processes on 1 GPU.
+# Caller-supplied REASONLITE_EXTRA_ARGS is appended, not discarded: parity runs
+# pass per-run overrides (--output_dir with a run-unique path, --max_steps,
+# --save_steps) through the cctl entry, and each run MUST write to its own
+# directory so no run can overwrite another's checkpoints.
+CALLER_EXTRA_ARGS="${REASONLITE_EXTRA_ARGS:-}"
 case "${MODE}" in
     smoke)
-        export REASONLITE_EXTRA_ARGS="--max_steps 3 --save_strategy no"
+        export REASONLITE_EXTRA_ARGS="--max_steps 3 --save_strategy no ${CALLER_EXTRA_ARGS}"
         export NPROC="${NPROC:-1}"
         ;;
     full)
-        export REASONLITE_EXTRA_ARGS=""
+        export REASONLITE_EXTRA_ARGS="${CALLER_EXTRA_ARGS}"
         export NPROC="${NPROC:-8}"
         ;;
     *)
@@ -123,6 +153,7 @@ case "${MODE}" in
         exit 2
         ;;
 esac
+echo "[launch] extra args: ${REASONLITE_EXTRA_ARGS}"
 
 # HF model/tokenizer downloads (get_tokenizer/get_model inside sft.py) must go
 # through the whitelist proxy — hf-mirror.com is not directly reachable. Exclude

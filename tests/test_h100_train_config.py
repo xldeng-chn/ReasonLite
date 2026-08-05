@@ -51,18 +51,32 @@ class Stage1ConfigTests(unittest.TestCase):
 
     def test_global_batch_is_256(self):
         # 8-GPU per_dev=32 OOMs at max_length=32768 (backward activations blow
-        # past 80G). Fix: 16 GPUs (2 nodes x 8), per_dev=16, grad_accum=1 ->
-        # global batch 16*1*16 = 256 (unchanged). Only per_dev moved.
+        # past 80G). The parity baseline runs 32 GPUs (4 nodes x 8) at the
+        # recipe's own per_dev=8, grad_accum=1 -> global batch 8*1*32 = 256,
+        # matching both the recipe and the packed run it is compared against.
         cfg = _load_yaml("train/config_stage1.yaml")
         per_dev = cfg["per_device_train_batch_size"]
         ga = cfg["gradient_accumulation_steps"]
-        self.assertEqual(per_dev, 16)
+        self.assertEqual(per_dev, 8)
         self.assertEqual(ga, 1)
-        self.assertEqual(per_dev * ga * 16, 256)
+        self.assertEqual(per_dev * ga * 32, 256)
 
-    def test_uses_flash_attention_3(self):
+    def test_uses_flash_attention_2(self):
+        # The published recipe asks for flash_attention_2 and the base image
+        # ships flash_attn 2.7.3, so no source build is needed. FA3 (used by the
+        # 16-GPU throughput branch) would change the attention kernel and make
+        # this run a different baseline than the recipe's.
         cfg = _load_yaml("train/config_stage1.yaml")
-        self.assertEqual(cfg["attn_implementation"], "flash_attention_3")
+        self.assertEqual(cfg["attn_implementation"], "flash_attention_2")
+
+    def test_parity_run_is_step_capped_and_isolated(self):
+        # Three parity runs share a quota and a filesystem: they must be step
+        # capped identically (same warmup_ratio -> same LR curve) and must never
+        # write into a directory another run could resume from or overwrite.
+        cfg = _load_yaml("train/config_stage1.yaml")
+        self.assertEqual(cfg["max_steps"], 300)
+        self.assertEqual(cfg["save_steps"], 100)
+        self.assertFalse(cfg["overwrite_output_dir"])
 
     def test_train_split_is_medium(self):
         # open-r1 sft.py reads `dataset_train_split` (TRL ScriptArguments,
@@ -191,7 +205,7 @@ class LaunchScriptTests(unittest.TestCase):
         # The ReasonLite repo URL must be the Codeup intranet fork (reachable
         # from training nodes), and the git ref must be this worktree's branch.
         self.assertIn("codeup.aliyun.com", setup_env["REASONLITE_GIT_REPO"])
-        self.assertEqual(setup_env["REASONLITE_GIT_REF"], "worktree-train-on-h100")
+        self.assertEqual(setup_env["REASONLITE_GIT_REF"], "parity-baseline")
         # launch script must not hardcode the literal cluster name
         with open(os.path.join(TRAIN_DIR, "launch_h100.sh")) as f:
             launch = f.read()

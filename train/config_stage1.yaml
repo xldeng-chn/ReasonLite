@@ -1,14 +1,21 @@
 # Model arguments
-model_name_or_path: Qwen/Qwen3-0.6B
+# Local asset path: training nodes have no public internet (HF hub is reached
+# only via hf-mirror through the whitelist proxy), and the parity runs must
+# load byte-identical weights on every run.
+model_name_or_path: /user/dengxianglong/models/Qwen3-0.6B
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
 # Data training arguments
 chat_template: "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0].role == 'system' %}\n        {{- messages[0].content + '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" and message.content is string and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %}\n        {%- set ns.multi_step_tool = false %}\n        {%- set ns.last_query_index = index %}\n    {%- endif %}\n{%- endfor %}\n{%- for message in messages %}\n    {%- if message.content is string %}\n        {%- set content = message.content %}\n    {%- else %}\n        {%- set content = '' %}\n    {%- endif %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {%- if loop.last or (not loop.last and reasoning_content) %}\n                {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content.lstrip('\\n') }}\n            {%- else %}\n                {{- '<|im_start|>' + message.role + '\\n' + content }}\n            {%- endif %}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and content) or (not loop.first) %}\n                    {{- '\\n' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- '<tool_call>\\n{\"name\": \"' }}\n                {{- tool_call.name }}\n                {{- '\", \"arguments\": ' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- '}\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}"
-dataset_name: replace_with_your_local_path_to_ReasonLite_stage1_data # stage1 data
+dataset_name: /user/dengxianglong/datasets/ReasonLite-Dataset # stage1 data
 dataset_config: default
-dataset_split: cot
+# open-r1 sft.py reads `dataset_train_split` (TRL ScriptArguments), NOT
+# `dataset_split` — the latter is silently ignored. The published dataset on
+# this cluster exposes only `high` (92 shards) and `medium` (217 shards); the
+# recipe's original `cot` split does not exist here. stage1 trains on `medium`.
+dataset_train_split: medium
 dataset_num_proc: 64
 ddp_timeout: 65536
 eos_token: <|im_end|>
@@ -33,14 +40,24 @@ lr_scheduler_kwargs:
 packing: false
 max_grad_norm: 0.3
 max_length: 32768
-max_steps: -1
+# Parity experiment: 300 optimizer steps, not the full 8-epoch recipe. The full
+# recipe is ~60h per run on 32 H100s; three runs do not fit the shared quota.
+# All three parity runs use the SAME max_steps so the warmup_ratio=0.03 LR curve
+# (9 warmup steps + 291 steady) is identical across them.
+max_steps: 300
 num_train_epochs: 8
-output_dir: data/ReasonLite_stage1
-overwrite_output_dir: true
+# Placeholder only. Every parity run overrides --output_dir with a run-unique
+# timestamped path so no run can resume from or overwrite another's checkpoints
+# (the repro tree holds a real checkpoint-16600 that auto-resume would pick up).
+output_dir: /user/dengxianglong/outputs/parity/stage1_baseline
+overwrite_output_dir: false
 per_device_eval_batch_size: 1
+# 32 GPUs (4 nodes x 8) x per_dev 8 x grad_accum 1 = global batch 256, the
+# recipe's value. Kept at the recipe's per_dev=8 rather than the 16-GPU
+# variant's per_dev=16.
 per_device_train_batch_size: 8
 push_to_hub: false
-save_steps: 200
+save_steps: 100
 save_total_limit: 30
 seed: 42
 use_liger_kernel: true

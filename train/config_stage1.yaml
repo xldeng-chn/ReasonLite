@@ -52,10 +52,11 @@ num_train_epochs: 8
 output_dir: /user/dengxianglong/outputs/parity/stage1_baseline
 overwrite_output_dir: false
 per_device_eval_batch_size: 1
-# 32 GPUs (4 nodes x 8) x per_dev 8 x grad_accum 1 = global batch 256, the
-# recipe's value. Kept at the recipe's per_dev=8 rather than the 16-GPU
-# variant's per_dev=16.
-per_device_train_batch_size: 8
+# 16 GPUs (2 nodes x 8) x per_dev 16 x grad_accum 1 = global batch 256, the
+# recipe's value. per_dev=32 on 8 GPUs OOMs at max_length=32768 (backward
+# activations exceed 80G); this 16-GPU shape is the one the throughput branch
+# already validated on this cluster.
+per_device_train_batch_size: 16
 push_to_hub: false
 save_steps: 100
 save_total_limit: 30

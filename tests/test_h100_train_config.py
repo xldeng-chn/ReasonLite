@@ -51,15 +51,16 @@ class Stage1ConfigTests(unittest.TestCase):
 
     def test_global_batch_is_256(self):
         # 8-GPU per_dev=32 OOMs at max_length=32768 (backward activations blow
-        # past 80G). The parity baseline runs 32 GPUs (4 nodes x 8) at the
-        # recipe's own per_dev=8, grad_accum=1 -> global batch 8*1*32 = 256,
-        # matching both the recipe and the packed run it is compared against.
+        # past 80G). 16 GPUs (2 nodes x 8) at per_dev=16, grad_accum=1 ->
+        # global batch 16*1*16 = 256: the recipe's value, the same batch the
+        # packed run is compared against, and the shape the throughput branch
+        # already validated on this cluster.
         cfg = _load_yaml("train/config_stage1.yaml")
         per_dev = cfg["per_device_train_batch_size"]
         ga = cfg["gradient_accumulation_steps"]
-        self.assertEqual(per_dev, 8)
+        self.assertEqual(per_dev, 16)
         self.assertEqual(ga, 1)
-        self.assertEqual(per_dev * ga * 32, 256)
+        self.assertEqual(per_dev * ga * 16, 256)
 
     def test_uses_flash_attention_2(self):
         # The published recipe asks for flash_attention_2 and the base image

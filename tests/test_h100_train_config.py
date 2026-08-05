@@ -71,11 +71,16 @@ class Stage1ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["attn_implementation"], "flash_attention_2")
 
     def test_parity_run_is_step_capped_and_isolated(self):
-        # Three parity runs share a quota and a filesystem: they must be step
-        # capped identically (same warmup_ratio -> same LR curve) and must never
-        # write into a directory another run could resume from or overwrite.
+        # Parity runs share a quota and a filesystem: they must be step capped
+        # identically (same warmup_ratio -> same LR curve) and must never write
+        # into a directory another run could resume from or overwrite.
+        #
+        # 2000 rather than the first pass's 300: at 300 steps the packed run's
+        # deviation was already separating from the baseline noise floor (the
+        # ratio grew from 2.8x to 14-26x across the run), and the open question
+        # is whether that separation keeps widening.
         cfg = _load_yaml("train/config_stage1.yaml")
-        self.assertEqual(cfg["max_steps"], 300)
+        self.assertEqual(cfg["max_steps"], 2000)
         self.assertEqual(cfg["save_steps"], 100)
         self.assertFalse(cfg["overwrite_output_dir"])
 

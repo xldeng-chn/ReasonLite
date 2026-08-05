@@ -40,11 +40,18 @@ lr_scheduler_kwargs:
 packing: false
 max_grad_norm: 0.3
 max_length: 32768
-# Parity experiment: 300 optimizer steps, not the full 8-epoch recipe. The full
+# Parity experiment: 2000 optimizer steps, not the full 8-epoch recipe. The full
 # recipe is ~60h per run on 32 H100s; three runs do not fit the shared quota.
-# All three parity runs use the SAME max_steps so the warmup_ratio=0.03 LR curve
-# (9 warmup steps + 291 steady) is identical across them.
-max_steps: 300
+# All parity runs use the SAME max_steps so the warmup_ratio=0.03 LR curve
+# (60 warmup steps + 1940 steady) is identical across them.
+#
+# Raised from the first pass's 300 because the packed run's deviation was
+# already separating from the baseline noise floor there -- the ratio grew from
+# 2.8x over steps 1-50 to 14-26x over steps 151-300 -- and the open question is
+# whether that separation keeps widening. Resuming the 300-step checkpoints was
+# rejected: warmup_ratio and the cosine decay both scale with total steps, so
+# resuming at max_steps=2000 would jump the LR ~10x at the seam.
+max_steps: 2000
 num_train_epochs: 8
 # Placeholder only. Every parity run overrides --output_dir with a run-unique
 # timestamped path so no run can resume from or overwrite another's checkpoints

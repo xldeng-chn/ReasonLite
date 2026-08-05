@@ -1,0 +1,38 @@
+# Training dependencies for ReasonLite on H100 (open-r1 SFT stack).
+# Installed at runtime by launch_h100.sh on top of the infra/nvidia-pytorch
+# base image.
+#
+# torch, flash-attn, and the CUDA stack are PROVIDED BY THE BASE IMAGE
+# (verified: python 3.12.3, torch 2.7.0a0+nv25.04, flash_attn 2.7.3).
+# Do NOT list them here: pip would downgrade torch (e.g. to 2.6.0) and break
+# the CUDA / flash-attn bindings compiled into the image wheels.
+#
+# dill 0.3.9 and pyarrow 19.0.1 are preinstalled in the image and pinned by
+# cudf/dask, so they CANNOT be upgraded. datasets 3.x pins dill<0.3.9 and
+# datasets 4.0+ pins pyarrow>=21.0.0 — both conflict. datasets AND trl (which
+# depends on datasets) are therefore NOT listed here; launch_h100.sh installs
+# both separately with --no-deps so they reuse the image's pyarrow/dill
+# instead of triggering the datasets dependency-resolution conflict.
+transformers==4.56.0
+accelerate>=1.10.1
+deepspeed==0.16.8
+peft>=0.14.0
+liger-kernel>=0.5.10
+safetensors>=0.3.3
+sentencepiece>=0.1.99
+einops>=0.8.0
+huggingface-hub[cli,hf_xet]>=0.30.2,<1.0
+hf_transfer>=0.1.4
+math-verify==0.5.2
+latex2sympy2_extended>=1.0.6
+langdetect
+bitsandbytes>=0.43.0
+wandb>=0.19.1
+# datasets 4.0.0 is installed --no-deps in launch_h100.sh (its pyarrow>=21
+# constraint conflicts with the image's pinned pyarrow==19.0.1). These are
+# datasets runtime deps the image does NOT provide and that do NOT pull
+# pyarrow/dill, so they are safe to install normally here; they must be
+# present before datasets is imported by open-r1 at train time.
+multiprocess
+fsspec
+xxhash

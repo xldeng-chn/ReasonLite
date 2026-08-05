@@ -1,0 +1,3 @@
+# Test dependencies for ReasonLite H100 training migration
+# Local-only: tests are pure-stdlib/pyyaml, no torch/open-r1 needed.
+pyyaml>=6.0

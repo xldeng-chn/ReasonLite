@@ -34,6 +34,18 @@ ddp_timeout: 65536
 eos_token: <|im_end|>
 
 # SFT trainer config
+# Loss normalisation denominator: global token count across ranks (True) or the
+# local rank's (False). It enters backprop, so it changes the gradients, not just
+# the reported number.
+#
+# Set explicitly because the default moved underneath us: upstream flipped it
+# from False to True between 4.52 and 4.56, and neither side of the parity
+# experiment set it, so the baseline (4.56) silently ran True and the packed side
+# (4.52) False. That made it the one environment difference specific enough to
+# test with a single variable -- which is what this run does, with both sides
+# pinned to True. Pinning also stops the next version bump from moving the
+# training maths with nothing in this repo changing.
+average_tokens_across_devices: true
 bf16: true
 do_eval: false
 eval_strategy: 'no'
@@ -64,7 +76,20 @@ max_length: 32768
 # whether that separation keeps widening. Resuming the 300-step checkpoints was
 # rejected: warmup_ratio and the cosine decay both scale with total steps, so
 # resuming at max_steps=2000 would jump the LR ~10x at the seam.
-max_steps: 2000
+# Normalisation experiment: run real stage1's LR curve, not a step-capped one.
+# max_steps: -1 lets the trainer derive the horizon from the data exactly as the
+# upstream recipe does -- ceil(4_333_874 / 256) = 16_930 steps/epoch x 8 epochs
+# = 135_440 steps, matching what train_opt's completed full run reported. warmup
+# then follows from warmup_ratio: ceil(135_440 * 0.03) = 4_064 steps.
+#
+# This replaces the 2000-step cap, whose warmup_ratio produced only 60 warmup
+# steps -- a 68x shorter LR ramp than real training ever sees, which made the
+# early-training regime the parity runs measured unrepresentative of it.
+#
+# The run is stopped manually once both arms pass 10_000 steps. Stopping early
+# does not perturb the curve; shortening max_steps would, because both warmup
+# and the cosine decay scale with the horizon.
+max_steps: -1
 num_train_epochs: 8
 # Placeholder only. Every parity run overrides --output_dir with a run-unique
 # timestamped path so no run can resume from or overwrite another's checkpoints

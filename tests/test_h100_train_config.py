@@ -4,6 +4,7 @@ Run with: python3 -m pytest tests/test_h100_train_config.py
 Or standalone: python3 tests/test_h100_train_config.py
 """
 
+import math
 import os
 import re
 import subprocess
@@ -70,17 +71,50 @@ class Stage1ConfigTests(unittest.TestCase):
         cfg = _load_yaml("train/config_stage1.yaml")
         self.assertEqual(cfg["attn_implementation"], "flash_attention_2")
 
-    def test_parity_run_is_step_capped_and_isolated(self):
-        # Parity runs share a quota and a filesystem: they must be step capped
-        # identically (same warmup_ratio -> same LR curve) and must never write
-        # into a directory another run could resume from or overwrite.
+    def test_lr_schedule_matches_real_stage1(self):
+        # The normalisation experiment runs the first 10k steps, but the LR curve
+        # must be real stage1's, not a 10k-step curve. max_steps: -1 with
+        # num_train_epochs: 8 makes the trainer derive the horizon from the data
+        # exactly as the upstream recipe does:
+        #   ceil(4_333_874 / 256) = 16_930 steps/epoch, x8 = 135_440
+        # which is the step count train_opt's completed full run reported.
+        # warmup then follows from warmup_ratio via TrainingArguments
+        # .get_warmup_steps, which is math.ceil (verified against the v4.56.0
+        # source), giving ceil(135_440 * 0.03) = 4_064 -- against the 60 warmup
+        # steps the 2000-step parity cap used to produce, a 68x difference in
+        # how long the LR ramp lasts.
         #
-        # 2000 rather than the first pass's 300: at 300 steps the packed run's
-        # deviation was already separating from the baseline noise floor (the
-        # ratio grew from 2.8x to 14-26x across the run), and the open question
-        # is whether that separation keeps widening.
+        # Deriving rather than hardcoding keeps one source of truth: if the split
+        # changes, the horizon follows. Both arms take the same path, so they
+        # stay comparable either way.
         cfg = _load_yaml("train/config_stage1.yaml")
-        self.assertEqual(cfg["max_steps"], 2000)
+        self.assertEqual(cfg["max_steps"], -1, "horizon must derive from epochs")
+        self.assertEqual(cfg["num_train_epochs"], 8)
+        self.assertEqual(cfg["warmup_ratio"], 0.03)
+
+        rows, global_batch = 4_333_874, 256
+        total = math.ceil(rows / global_batch) * cfg["num_train_epochs"]
+        self.assertEqual(total, 135_440)
+        self.assertEqual(math.ceil(total * cfg["warmup_ratio"]), 4_064)
+
+    def test_token_averaging_is_explicit(self):
+        # The one difference specific enough to test with a single variable, and
+        # the reason this branch is being re-run. Neither side used to set it, so
+        # each took its transformers version's default -- upstream flipped that
+        # default from False to True between 4.52 and 4.56, which silently gave
+        # the baseline (4.56) global-token normalisation and the packed side
+        # (4.52) per-rank. It decides the loss denominator and enters backprop.
+        #
+        # Pinning it removes a landmine as much as it sets up the experiment: an
+        # unset value means the next version bump can move the training maths
+        # without anything in this repo changing.
+        cfg = _load_yaml("train/config_stage1.yaml")
+        self.assertIs(cfg["average_tokens_across_devices"], True)
+
+    def test_parity_run_is_isolated(self):
+        # Parity runs share a quota and a filesystem: none may write into a
+        # directory another run could resume from or overwrite.
+        cfg = _load_yaml("train/config_stage1.yaml")
         self.assertEqual(cfg["save_steps"], 100)
         self.assertFalse(cfg["overwrite_output_dir"])
 

@@ -97,15 +97,17 @@ class Stage1ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["output_dir"].startswith(OUTPUT_ROOT))
 
     def test_dataset_num_proc_uses_the_allocated_cores(self):
-        # Measured on orig_1_2k: the three map steps all ran at num_proc=64, but
-        # tokenize managed 850 examples/s against 16,491 for the messages map and
-        # 16,240 for truncation. The framework is not the bottleneck -- tokenize
-        # additionally renders config_stage1.yaml's Jinja chat template per row,
-        # in Python, over 4.33M long-CoT rows, and that took 1:24:55.
-        #
-        # The runs request 105 cores per node while only 64 workers were spawned,
-        # so roughly 40% of the allocation sat idle. 96 leaves headroom for the
+        # Tokenize is the dominant pre-training cost: it renders the recipe's
+        # Jinja chat template per row, in Python, over 4.33M long-CoT rows.
+        # 96 matches the 105 cores allocated per node, with headroom for the
         # main process, the dataloader workers and the system.
+        #
+        # On the measurements: orig_1_2k ran 1:24:55 at 850 examples/s and a
+        # single-rank smoke at 96 ran 7:52 at 9,165. Those are not comparable.
+        # Workers rose only 1.5x, so this setting explains little of the 10.8x
+        # gap -- random tokenize fingerprints had all 16 ranks tokenizing the
+        # full split at once, ~1024 processes over 105 cores. The cache-key fix
+        # removes that; this value just right-sizes one rank's pool.
         #
         # CAUTION: num_proc is part of the shard cache filename
         # (cache-<fp>_00000_of_00096.arrow), so changing it invalidates the

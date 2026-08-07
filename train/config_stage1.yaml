@@ -17,10 +17,15 @@ dataset_config: default
 # recipe's original `cot` split does not exist here. stage1 trains on `medium`.
 dataset_train_split: medium
 # Tokenize renders the Jinja chat template above per row, in Python, across
-# 4.33M long-CoT rows -- 1:24:55 at 850 examples/s on orig_1_2k, against 16k+
-# for the pure-dict map steps at the same worker count. The runs allocate 105
-# cores per node, so 64 workers left ~40% of them idle. 96 keeps headroom for
-# the main process, dataloader workers and the system.
+# 4.33M long-CoT rows. It is the dominant pre-training cost.
+# 96 matches the 105 cores the runs allocate per node, leaving headroom for the
+# main process, dataloader workers and the system.
+# Note on the measurements: orig_1_2k took 1:24:55 at 850 examples/s, and a
+# single-rank smoke at num_proc=96 took 7:52 at 9,165 -- but those two numbers
+# are not comparable. The 10.8x gap is mostly NOT this setting (workers only
+# rose 1.5x); it is that random tokenize fingerprints made all 16 ranks tokenize
+# the full split independently, ~1024 processes on 105 cores. The cache-key fix
+# removes that contention; this value only right-sizes one rank's worker pool.
 # CAUTION: this value is part of the shard cache filename
 # (cache-<fp>_00000_of_00096.arrow). Changing it invalidates the tokenize cache
 # and forces a full re-tokenize; do not tune it casually.

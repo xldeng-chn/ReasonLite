@@ -105,11 +105,17 @@ class Stage1ConfigTests(unittest.TestCase):
         # the baseline (4.56) global-token normalisation and the packed side
         # (4.52) per-rank. It decides the loss denominator and enters backprop.
         #
-        # Pinning it removes a landmine as much as it sets up the experiment: an
-        # unset value means the next version bump can move the training maths
-        # without anything in this repo changing.
+        # Aligned at False, not True: the packed side's config lives on GPFS
+        # outside version control, so the side that can be changed cleanly is
+        # this one. False is what its 4.52 default already produces, so pinning
+        # the baseline here makes both sides match without touching that copy.
+        #
+        # Note this means both arms run the pre-4.56 semantics. The experiment
+        # asks whether this flag explains the orig/opt divergence, not which
+        # setting is more correct -- upstream presumably flipped the default
+        # because True is the better-founded normalisation.
         cfg = _load_yaml("train/config_stage1.yaml")
-        self.assertIs(cfg["average_tokens_across_devices"], True)
+        self.assertIs(cfg["average_tokens_across_devices"], False)
 
     def test_parity_run_is_isolated(self):
         # Parity runs share a quota and a filesystem: none may write into a

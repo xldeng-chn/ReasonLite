@@ -42,10 +42,15 @@ eos_token: <|im_end|>
 # from False to True between 4.52 and 4.56, and neither side of the parity
 # experiment set it, so the baseline (4.56) silently ran True and the packed side
 # (4.52) False. That made it the one environment difference specific enough to
-# test with a single variable -- which is what this run does, with both sides
-# pinned to True. Pinning also stops the next version bump from moving the
-# training maths with nothing in this repo changing.
-average_tokens_across_devices: true
+# test with a single variable.
+#
+# Aligned at False rather than True because the packed side's config lives on
+# GPFS outside version control: this is the side that can be changed cleanly,
+# and False is what its 4.52 default already produces. Both arms therefore run
+# the pre-4.56 semantics. The experiment asks whether this flag explains the
+# orig/opt divergence, not which setting is better founded -- upstream
+# presumably flipped the default because True is.
+average_tokens_across_devices: false
 bf16: true
 do_eval: false
 eval_strategy: 'no'

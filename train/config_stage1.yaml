@@ -16,7 +16,15 @@ dataset_config: default
 # this cluster exposes only `high` (92 shards) and `medium` (217 shards); the
 # recipe's original `cot` split does not exist here. stage1 trains on `medium`.
 dataset_train_split: medium
-dataset_num_proc: 64
+# Tokenize renders the Jinja chat template above per row, in Python, across
+# 4.33M long-CoT rows -- 1:24:55 at 850 examples/s on orig_1_2k, against 16k+
+# for the pure-dict map steps at the same worker count. The runs allocate 105
+# cores per node, so 64 workers left ~40% of them idle. 96 keeps headroom for
+# the main process, dataloader workers and the system.
+# CAUTION: this value is part of the shard cache filename
+# (cache-<fp>_00000_of_00096.arrow). Changing it invalidates the tokenize cache
+# and forces a full re-tokenize; do not tune it casually.
+dataset_num_proc: 96
 ddp_timeout: 65536
 eos_token: <|im_end|>
 

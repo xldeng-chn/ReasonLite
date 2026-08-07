@@ -96,6 +96,28 @@ class Stage1ConfigTests(unittest.TestCase):
         cfg = _load_yaml("train/config_stage1.yaml")
         self.assertTrue(cfg["output_dir"].startswith(OUTPUT_ROOT))
 
+    def test_dataset_num_proc_uses_the_allocated_cores(self):
+        # Measured on orig_1_2k: the three map steps all ran at num_proc=64, but
+        # tokenize managed 850 examples/s against 16,491 for the messages map and
+        # 16,240 for truncation. The framework is not the bottleneck -- tokenize
+        # additionally renders config_stage1.yaml's Jinja chat template per row,
+        # in Python, over 4.33M long-CoT rows, and that took 1:24:55.
+        #
+        # The runs request 105 cores per node while only 64 workers were spawned,
+        # so roughly 40% of the allocation sat idle. 96 leaves headroom for the
+        # main process, the dataloader workers and the system.
+        #
+        # CAUTION: num_proc is part of the shard cache filename
+        # (cache-<fp>_00000_of_00096.arrow), so changing it invalidates the
+        # tokenize cache and forces a full re-tokenize. Do not tune this
+        # casually once a cache has been populated.
+        cfg = _load_yaml("train/config_stage1.yaml")
+        self.assertEqual(cfg["dataset_num_proc"], 96)
+        self.assertLessEqual(
+            cfg["dataset_num_proc"], 105,
+            "dataset_num_proc must not exceed the cores requested per node",
+        )
+
 
 class Stage2ConfigTests(unittest.TestCase):
     def test_dataset_path_filled_and_matches_stage1(self):

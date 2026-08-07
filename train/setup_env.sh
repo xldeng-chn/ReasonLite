@@ -32,11 +32,21 @@ export TORCHINDUCTOR_CACHE_DIR="${REASONLITE_WORKSPACE_ROOT}/.cache/torchinducto
 # datasets writes generated splits to HF_DATASETS_CACHE; the default /root/.cache
 # fills up and crashes during split generation. All HF/torch/tmp caches go to
 # the shared GPFS account root instead.
+export XDG_CACHE_HOME="${REASONLITE_WORKSPACE_ROOT}/.cache"
 export HF_HOME="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface"
 export HF_DATASETS_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/datasets"
 export HF_HUB_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
 export TRANSFORMERS_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/huggingface/hub"
 export TMPDIR="${REASONLITE_WORKSPACE_ROOT}/.cache/tmp"
+# triton, torch and pip default to $HOME (the container overlay) and were the
+# one group still landing there: orig_1_2k's log carries exactly one container
+# path, `df: /root/.triton/autotune`, while the packed side exports the full set
+# via devspace_env.sh and carries none. Beyond the disk-space concern above,
+# this is an environment asymmetry between the two sides of a parity
+# experiment, and triton's autotune sits on the compute path via liger-kernel.
+export TRITON_CACHE_DIR="${XDG_CACHE_HOME}/triton"
+export TORCH_HOME="${XDG_CACHE_HOME}/torch"
+export PIP_CACHE_DIR="${XDG_CACHE_HOME}/pip"
 
 # --- HuggingFace endpoint (nodes have no public internet to huggingface.co) ---
 # hf-mirror.com is the domestic mirror; huggingface_hub/transformers read

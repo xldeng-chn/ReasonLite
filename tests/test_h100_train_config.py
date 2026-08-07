@@ -199,7 +199,9 @@ class LaunchScriptTests(unittest.TestCase):
                     "CCTL_BILLING", "CCTL_IMAGE", "DATASET_PATH",
                     "OUTPUT_ROOT", "REASONLITE_WORKSPACE_ROOT",
                     "REASONLITE_GIT_REPO", "REASONLITE_GIT_REF",
-                    "HF_ENDPOINT", "HF_DATASETS_CACHE", "TMPDIR"):
+                    "HF_ENDPOINT", "HF_DATASETS_CACHE", "TMPDIR",
+                    "XDG_CACHE_HOME", "TRITON_CACHE_DIR", "TORCH_HOME",
+                    "PIP_CACHE_DIR"):
             self.assertIn(key, setup_env, f"setup_env.sh missing {key}")
         # HF endpoint must be the domestic mirror (nodes cannot reach huggingface.co)
         self.assertEqual(setup_env["HF_ENDPOINT"], "https://hf-mirror.com")
@@ -217,6 +219,45 @@ class LaunchScriptTests(unittest.TestCase):
             launch = f.read()
         self.assertNotIn("paratera_train", launch,
                          "launch_h100.sh must source coordinates, not hardcode")
+
+    def test_all_caches_live_under_the_account_root(self):
+        # The baseline redirected the HF caches but not triton's: orig_1_2k's log
+        # carries exactly one /root path, `df: /root/.triton/autotune`, while the
+        # packed side (which exports the full set via devspace_env.sh) carries
+        # none. That is an environment asymmetry between the two sides of a
+        # parity experiment, and triton's autotune sits on the compute path
+        # through liger-kernel, so it is not merely a tidiness issue.
+        setup_env = _parse_shell_exports("train/setup_env.sh")
+        for key in ("HF_HOME", "HF_DATASETS_CACHE", "HF_HUB_CACHE",
+                    "TRANSFORMERS_CACHE", "TMPDIR", "TORCHINDUCTOR_CACHE_DIR",
+                    "XDG_CACHE_HOME", "TRITON_CACHE_DIR", "TORCH_HOME",
+                    "PIP_CACHE_DIR"):
+            value = setup_env[key]
+            self.assertRegex(
+                value, r"^\$\{(REASONLITE_WORKSPACE_ROOT|XDG_CACHE_HOME)\}",
+                f"{key} must derive from the writable account root, got {value}",
+            )
+
+    def test_no_container_local_cache_paths(self):
+        # Regression lock on the intent rather than on today's variable list:
+        # any cache pinned to the container overlay re-creates the asymmetry,
+        # whichever variable it arrives under. Comments are stripped first --
+        # the prose explaining WHY /root/.cache is avoided must stay readable.
+        for rel in ("train/setup_env.sh", "train/launch_h100.sh"):
+            with open(os.path.join(REPO_ROOT, rel)) as f:
+                code = [ln for ln in f if not ln.lstrip().startswith("#")]
+            for line in code:
+                self.assertNotIn("/root/", line,
+                                 f"{rel} pins a cache to /root: {line.strip()}")
+
+    def test_launch_precreates_every_cache_dir(self):
+        # triton writes its autotune cache without creating the directory first,
+        # so the mkdir has to cover the new vars too.
+        with open(os.path.join(TRAIN_DIR, "launch_h100.sh")) as f:
+            launch = f.read()
+        for var in ("TRITON_CACHE_DIR", "TORCH_HOME"):
+            self.assertIn(f'"${{{var}}}"', launch,
+                          f"launch_h100.sh must mkdir -p ${{{var}}}")
 
     def test_pip_install_in_entry(self):
         # User decision B: venv is built at runtime via pip install in the

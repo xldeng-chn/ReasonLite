@@ -33,9 +33,11 @@ source "$(dirname "$0")/setup_env.sh"
 echo "[launch] mode=${MODE} stage=${STAGE}"
 echo "[launch] workspace=${REASONLITE_WORKSPACE_ROOT} dataset=${DATASET_PATH}"
 # Pre-create all cache dirs on GPFS (sourced from setup_env.sh). HF_DATASETS_CACHE
-# etc. must exist before datasets tries to write split generation output there.
+# etc. must exist before datasets tries to write split generation output there,
+# and triton writes its autotune cache without creating the directory first.
 mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}" \
-         "${HF_DATASETS_CACHE}" "${HF_HUB_CACHE}" "${TMPDIR}"
+         "${HF_DATASETS_CACHE}" "${HF_HUB_CACHE}" "${TMPDIR}" \
+         "${TRITON_CACHE_DIR}" "${TORCH_HOME}" "${PIP_CACHE_DIR}"
 
 # Training nodes have no public internet. pip reaches PyPI via the Tsinghua
 # mirror through the whitelist proxy (PyPI-only; github is NOT whitelisted,

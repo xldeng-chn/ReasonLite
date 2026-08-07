@@ -21,6 +21,31 @@ set -euo pipefail
 REPO="${REASONLITE_REPO_ROOT:-/local/apps/ReasonLite}"
 source "${REPO}/train/setup_env.sh"
 
+# The base image ships torch/CUDA/flash-attn but no transformers or datasets --
+# launch_h100.sh installs those at runtime, and this probe bypasses it, so the
+# same bootstrap has to happen here. Mirrors launch_h100.sh exactly rather than
+# improvising: same PIP_CONSTRAINT drop, same proxy, same --no-deps split.
+#
+# The --no-deps on datasets/trl is load-bearing, not a shortcut: datasets 4.0.0
+# requires pyarrow>=21 while the image pins pyarrow==19.0.1 via cudf/dask, and
+# letting pip resolve that pulls a pyarrow which breaks the image's compiled
+# CUDA bindings. A probe running against a different datasets/pyarrow than the
+# training run would be testing the wrong stack.
+unset PIP_CONSTRAINT
+pip_install() {
+    http_proxy="${PIP_PROXY}" https_proxy="${PIP_PROXY}" \
+        pip install --no-cache-dir \
+        -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" "$@"
+}
+
+echo "=== [0/3] installing probe dependencies ==="
+pip_install -r "${REPO}/train/requirements_train.txt"
+pip_install --no-deps "datasets==4.0.0" "trl==0.18.0"
+python3 -c "
+import datasets, transformers
+print(f'[probe] datasets={datasets.__version__} transformers={transformers.__version__}')
+"
+
 MODEL="${MODEL_PATH:-/user/dengxianglong/models/Qwen3-0.6B}"
 PROBE_CACHE="${REASONLITE_WORKSPACE_ROOT}/.cache/fingerprint_probe"
 rm -rf "${PROBE_CACHE}"

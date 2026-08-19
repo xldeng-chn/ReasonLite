@@ -23,9 +23,13 @@ export CCTL_IMAGE="${CCTL_IMAGE:-infra/nvidia-pytorch:latest}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # --- shared GPFS paths (writable account root) ---
-export REASONLITE_WORKSPACE_ROOT="${REASONLITE_WORKSPACE_ROOT:-/user/dengxianglong}"
-export DATASET_PATH="${DATASET_PATH:-/user/dengxianglong/datasets/ReasonLite-Dataset}"
-export OUTPUT_ROOT="${OUTPUT_ROOT:-/user/dengxianglong/outputs}"
+# REASONLITE_USER is the single source for the GPFS account name; every
+# /user/<name> path below derives from it so a new account only overrides
+# this one var.
+export REASONLITE_USER="${REASONLITE_USER:-dengxianglong}"
+export REASONLITE_WORKSPACE_ROOT="${REASONLITE_WORKSPACE_ROOT:-/user/${REASONLITE_USER}}"
+export DATASET_PATH="${DATASET_PATH:-${REASONLITE_WORKSPACE_ROOT}/datasets/ReasonLite-Dataset}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-${REASONLITE_WORKSPACE_ROOT}/outputs}"
 export TORCHINDUCTOR_CACHE_DIR="${REASONLITE_WORKSPACE_ROOT}/.cache/torchinductor"
 
 # --- caches redirected to GPFS (container /root overlay has limited space) ---
@@ -53,11 +57,14 @@ export PIP_CACHE_DIR="${XDG_CACHE_HOME}/pip"
 # HF_ENDPOINT and route all from_pretrained / hf_hub_download calls through it.
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 
-# --- open-r1 source (preinstalled on shared GPFS, no online clone) ---
-# Training nodes cannot reach codeup.aliyun.com port 22 (connection timed
-# out), so open-r1 is cloned offline and placed on GPFS. launch_h100.sh
-# installs it editable from this path.
-export OPENR1_ROOT="${OPENR1_ROOT:-/user/dengxianglong/workspace/open-r1}"
+# --- open-r1 source (cloned at runtime from DevCloud to /local/app) ---
+# open-r1 is cloned at runtime by launch_h100.sh from its DevCloud mirror
+# into a per-pod path under /local/app. DevCloud is on the intranet and
+# must NOT be routed through the whitelist proxy (it breaks the git clone),
+# so launch_h100.sh unsets the proxy vars before cloning. OPENR1_GIT_REPO
+# is the SSOT for the clone URL.
+export OPENR1_ROOT="${OPENR1_ROOT:-/local/app/open-r1}"
+export OPENR1_GIT_REPO="${OPENR1_GIT_REPO:-git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/open-r1.git}"
 
 # --- pip mirror + egress proxy (training nodes have no public internet) ---
 # pip reaches PyPI via the Tsinghua mirror, tunneled through the whitelist
@@ -67,9 +74,9 @@ export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.tuna.tsinghua.edu.cn}"
 export PIP_PROXY="${PIP_PROXY:-http://whitelist-proxy.cybertron.svc.cluster.local:7891}"
 
 # --- ReasonLite repo (mounted into the container via cctl --code-type git) ---
-# Codeup is reachable from the training nodes over the Aliyun intranet; the
-# branch must match what cctl submits with --git-ref. cctl mounts the cloned
-# repo at /local/apps/ReasonLite (probed on the paratera_train node).
-export REASONLITE_GIT_REPO="${REASONLITE_GIT_REPO:-git@codeup.aliyun.com:modelbest/xldeng-chn/ReasonLite.git}"
+# DevCloud is reachable from the training nodes over the intranet; the branch
+# must match what cctl submits with --git-ref. cctl mounts the cloned repo at
+# /local/apps/ReasonLite (probed on the paratera_train node).
+export REASONLITE_GIT_REPO="${REASONLITE_GIT_REPO:-git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/ReasonLite.git}"
 export REASONLITE_GIT_REF="${REASONLITE_GIT_REF:-parity-baseline}"
 export REASONLITE_REPO_ROOT="${REASONLITE_REPO_ROOT:-/local/apps/ReasonLite}"

@@ -41,10 +41,10 @@ mkdir -p "${OUTPUT_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}" \
 
 # Training nodes have no public internet. pip reaches PyPI via the Tsinghua
 # mirror through the whitelist proxy (PyPI-only; github is NOT whitelisted,
-# so open-r1 is cloned from its Codeup mirror instead — see setup_env.sh).
-# The proxy is scoped to the pip installs ONLY: Codeup is on the intranet and
-# must NOT be routed through the proxy (it breaks git clone), so we unset the
-# proxy vars before cloning open-r1 below.
+# so open-r1 is cloned from its DevCloud mirror at runtime — see setup_env.sh).
+# The proxy is scoped to the pip installs ONLY: DevCloud is on the intranet
+# and must NOT be routed through the proxy (it breaks git clone), so we unset
+# the proxy vars before cloning open-r1 below.
 pip_install() {
     http_proxy="${PIP_PROXY}" https_proxy="${PIP_PROXY}" \
         pip install --no-cache-dir \
@@ -109,14 +109,22 @@ if not ok:
 PYFA2
 fi
 
-# --- 2. open-r1 (preinstalled on shared GPFS; no online clone) ---
-# Training nodes cannot reach codeup.aliyun.com:22, so open-r1 is placed on
-# GPFS ahead of time (OPENR1_ROOT). Verify it exists, then editable-install.
-# Install from the repo root (setup.py/pyproject.toml live there, not in src/).
+# --- 2. open-r1 (cloned at runtime from DevCloud to /local/app) ---
+# open-r1 is cloned from its DevCloud mirror (OPENR1_GIT_REPO, see
+# setup_env.sh) into OPENR1_ROOT on each pod. Idempotent: if setup.py or
+# pyproject.toml is already present (pod reuse / resume), skip the clone.
+# DevCloud is on the intranet, so unset the whitelist proxy around the clone
+# — routing git clone through the PyPI-only proxy breaks the connection.
+# Install editable from the repo root (setup.py/pyproject.toml live there,
+# not in src/).
 if [ ! -f "${OPENR1_ROOT}/setup.py" ] && [ ! -f "${OPENR1_ROOT}/pyproject.toml" ]; then
-    echo "[launch] FATAL: open-r1 setup.py/pyproject.toml not found at ${OPENR1_ROOT}" >&2
-    echo "[launch]        pre-clone open-r1 onto GPFS at OPENR1_ROOT" >&2
-    exit 1
+    echo "[launch] cloning open-r1 from ${OPENR1_GIT_REPO} -> ${OPENR1_ROOT}"
+    mkdir -p "$(dirname "${OPENR1_ROOT}")"
+    _saved_http_proxy="${http_proxy:-}"
+    _saved_https_proxy="${https_proxy:-}"
+    unset http_proxy https_proxy
+    git clone --depth 1 "${OPENR1_GIT_REPO}" "${OPENR1_ROOT}"
+    export http_proxy="${_saved_http_proxy}" https_proxy="${_saved_https_proxy}"
 fi
 pip install --no-deps -e "${OPENR1_ROOT}"
 
@@ -162,6 +170,6 @@ echo "[launch] extra args: ${REASONLITE_EXTRA_ARGS}"
 # intranet hosts (Codeup, k8s services, GPFS) so they bypass the proxy.
 export http_proxy="${PIP_PROXY}"
 export https_proxy="${PIP_PROXY}"
-export no_proxy="codeup.aliyun.com,.cybertron.svc.cluster.local,.svc.cluster.local,127.0.0.1,localhost"
+export no_proxy="codehub.devcloud.cn-north-4.huaweicloud.com,.cybertron.svc.cluster.local,.svc.cluster.local,127.0.0.1,localhost"
 
 bash "${REASONLITE_REPO_ROOT}/train/${STAGE}.sh" ${REASONLITE_EXTRA_ARGS}

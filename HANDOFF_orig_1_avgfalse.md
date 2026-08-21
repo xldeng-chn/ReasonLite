@@ -35,12 +35,14 @@
 | 组件 | 来源 | 落点 |
 |---|---|---|
 | ReasonLite | cctl `--code-type git` 从 DevCloud 拉取，`--git-ref parity-baseline` | 挂载到 `/local/apps/ReasonLite` |
-| open-r1 | `launch_h100.sh` **运行时**从 DevCloud 克隆（`OPENR1_GIT_REPO`，见 `setup_env.sh`） | `/local/app/open-r1`，再 `pip install --no-deps -e` |
+| open-r1 | `launch_h100.sh` **运行时**从 DevCloud **HTTPS:443** 克隆（`OPENR1_GIT_REPO` + 可选 `OPENR1_GIT_USER`/`OPENR1_GIT_TOKEN`，见 `setup_env.sh`） | `/local/app/open-r1`，再 `pip install --no-deps -e` |
 | Python 依赖 | PyPI（清华镜像），`requirements_train.txt` | 全 PyPI，无本地包 |
 
 DevCloud URL（SSOT 在 `train/setup_env.sh`）：
-- ReasonLite: `git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/ReasonLite.git`
-- open-r1:    `git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/open-r1.git`
+- ReasonLite: `git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/ReasonLite.git`（cctl 提交侧克隆，节点只拿挂载结果）
+- open-r1:    `https://codehub.devcloud.cn-north-4.huaweicloud.com/66cb35255b8140c08f7af25e4a10542d/xldeng-chn/open-r1.git`（节点运行时克隆）
+
+**已知坑：训练节点到 DevCloud:22 不通**。SSH 克隆（`git@codehub...`）在训练节点上 `Connection timed out`（smoke 747104 实测）——节点没有到 DevCloud 端口 22 的网络路由。故 open-r1 改走 HTTPS:443。私有仓库需凭据：通过 cctl `--env OPENR1_GIT_USER=... --env OPENR1_GIT_TOKEN=...` 注入（token 是密钥，**不要写入仓库**）；`launch_h100.sh` 在 URL 里拼 `https://<user>:<token>@host/...`。无 token 时 `GIT_TERMINAL_PROMPT=0` 让克隆在认证挑战处快速失败而非挂起，可作 :443 可达性探针。
 
 **本地包依赖核查**：`requirements_train.txt` 全 PyPI 无本地包；唯一依赖本地包的 pip 安装是 open-r1 editable（`pip install --no-deps -e ${OPENR1_ROOT}`），由运行时克隆满足。FA3 egg（`launch_h100.sh` `${REASONLITE_WORKSPACE_ROOT}/wheels/flash_attn_3-...egg`）是本地 GPFS 制品，仅 `flash_attention_3` 分支触发，本分支用 FA2，不触发。
 
@@ -100,7 +102,7 @@ cctl pytorchjob create \
   --git-ref parity-baseline \
   --gpu 8 --gpu-model H100 --nodes 2 --cpu 105 --memory 1207 --priority NORMAL \
   --env OPEN_R1_DISABLE_AUTO_RESUME=1 \
-  --entry "mkdir -p $D && REASONLITE_EXTRA_ARGS='--output_dir $D/output --resume_from_checkpoint $D/output/checkpoint-10400 --save_steps 10000' bash /local/apps/ReasonLite/train/launch_h100.sh full stage1 2>&1 | tee $D/output_resume_full.log"
+  --entry "set -o pipefail; mkdir -p $D && REASONLITE_EXTRA_ARGS='--output_dir $D/output --resume_from_checkpoint $D/output/checkpoint-10400 --save_steps 10000' bash /local/apps/ReasonLite/train/launch_h100.sh full stage1 2>&1 | tee $D/output_resume_full.log"
 ```
 
 ## 验证判据

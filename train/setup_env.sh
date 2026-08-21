@@ -59,12 +59,19 @@ export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 
 # --- open-r1 source (cloned at runtime from DevCloud to /local/app) ---
 # open-r1 is cloned at runtime by launch_h100.sh from its DevCloud mirror
-# into a per-pod path under /local/app. DevCloud is on the intranet and
-# must NOT be routed through the whitelist proxy (it breaks the git clone),
-# so launch_h100.sh unsets the proxy vars before cloning. OPENR1_GIT_REPO
-# is the SSOT for the clone URL.
+# into a per-pod path under /local/app. Training nodes CANNOT reach DevCloud
+# port 22 (SSH clone times out — verified by smoke 747104), so the clone uses
+# the HTTPS endpoint on port 443 instead. DevCloud HTTPS auth is username +
+# access token, injected into the URL by launch_h100.sh when OPENR1_GIT_TOKEN
+# is set. DevCloud is on the intranet and must NOT be routed through the
+# whitelist proxy (PyPI-only; it rejects DevCloud), so launch_h100.sh unsets
+# the proxy vars before cloning. OPENR1_GIT_REPO is the SSOT for the clone URL
+# (HTTPS, no embedded creds); OPENR1_GIT_USER / OPENR1_GIT_TOKEN are the
+# optional secrets (set via cctl --env, NEVER committed to the repo).
 export OPENR1_ROOT="${OPENR1_ROOT:-/local/app/open-r1}"
-export OPENR1_GIT_REPO="${OPENR1_GIT_REPO:-git@codehub.devcloud.cn-north-4.huaweicloud.com:66cb35255b8140c08f7af25e4a10542d/xldeng-chn/open-r1.git}"
+export OPENR1_GIT_REPO="${OPENR1_GIT_REPO:-https://codehub.devcloud.cn-north-4.huaweicloud.com/66cb35255b8140c08f7af25e4a10542d/xldeng-chn/open-r1.git}"
+export OPENR1_GIT_USER="${OPENR1_GIT_USER:-}"
+export OPENR1_GIT_TOKEN="${OPENR1_GIT_TOKEN:-}"
 
 # --- pip mirror + egress proxy (training nodes have no public internet) ---
 # pip reaches PyPI via the Tsinghua mirror, tunneled through the whitelist

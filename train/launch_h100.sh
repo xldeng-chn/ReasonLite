@@ -110,21 +110,35 @@ PYFA2
 fi
 
 # --- 2. open-r1 (cloned at runtime from DevCloud to /local/app) ---
-# open-r1 is cloned from its DevCloud mirror (OPENR1_GIT_REPO, see
-# setup_env.sh) into OPENR1_ROOT on each pod. Idempotent: if setup.py or
-# pyproject.toml is already present (pod reuse / resume), skip the clone.
+# open-r1 is cloned from its DevCloud HTTPS mirror (OPENR1_GIT_REPO, see
+# setup_env.sh) into OPENR1_ROOT on each pod. Training nodes cannot reach
+# DevCloud:22 (SSH clone times out — verified), so we clone over HTTPS:443.
+# If OPENR1_GIT_TOKEN is set, inject user:token into the URL; otherwise
+# attempt an unauthenticated clone (public repo, or a reachability probe
+# that fails fast at the auth challenge instead of hanging). GIT_TERMINAL_PROMPT=0
+# makes the no-creds case fail non-interactively rather than prompt and hang.
 # DevCloud is on the intranet, so unset the whitelist proxy around the clone
 # — routing git clone through the PyPI-only proxy breaks the connection.
 # Install editable from the repo root (setup.py/pyproject.toml live there,
 # not in src/).
 if [ ! -f "${OPENR1_ROOT}/setup.py" ] && [ ! -f "${OPENR1_ROOT}/pyproject.toml" ]; then
-    echo "[launch] cloning open-r1 from ${OPENR1_GIT_REPO} -> ${OPENR1_ROOT}"
+    _clone_url="${OPENR1_GIT_REPO}"
+    if [ -n "${OPENR1_GIT_TOKEN}" ]; then
+        # Inject credentials: https://<user>:<token>@host/path. The user
+        # segment may be empty for token-only auth schemes.
+        _cred_url="https://${OPENR1_GIT_USER}:${OPENR1_GIT_TOKEN}@${_clone_url#https://}"
+        echo "[launch] cloning open-r1 from ${OPENR1_GIT_REPO} (user=${OPENR1_GIT_USER:-<none>}) -> ${OPENR1_ROOT}"
+    else
+        _cred_url="${_clone_url}"
+        echo "[launch] cloning open-r1 from ${_clone_url} (no token) -> ${OPENR1_ROOT}"
+    fi
     mkdir -p "$(dirname "${OPENR1_ROOT}")"
     _saved_http_proxy="${http_proxy:-}"
     _saved_https_proxy="${https_proxy:-}"
     unset http_proxy https_proxy
-    git clone --depth 1 "${OPENR1_GIT_REPO}" "${OPENR1_ROOT}"
+    GIT_TERMINAL_PROMPT=0 git clone --depth 1 "${_cred_url}" "${OPENR1_ROOT}"
     export http_proxy="${_saved_http_proxy}" https_proxy="${_saved_https_proxy}"
+    unset _clone_url _cred_url
 fi
 pip install --no-deps -e "${OPENR1_ROOT}"
 
